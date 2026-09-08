@@ -22,13 +22,18 @@ def home():
 @app.post("/ask")
 def ask_ai(request: AskRequest):
 
-    # Step 1: Router selects the model
-    selected_model = choose_model(request.prompt)
+    routing_result = choose_model(request.prompt)
 
-    # Step 2: Send request to selected model
-    answer = ask_model(request.prompt, selected_model)
+    selected_task = routing_result["task"]
+    selected_model = routing_result["model"]
+
+    answer = ask_model(
+        request.prompt,
+        selected_model
+    )
 
     return {
+        "task": selected_task,
         "model": selected_model,
         "response": answer
     }

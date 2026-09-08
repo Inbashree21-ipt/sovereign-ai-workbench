@@ -5,7 +5,7 @@ MODEL_MAP = {
 }
 
 
-def choose_model(prompt: str) -> str:
+def choose_model(prompt: str):
 
     prompt = prompt.lower()
 
@@ -36,12 +36,24 @@ def choose_model(prompt: str) -> str:
     ]
 
     if any(word in prompt for word in coding_keywords):
-        return MODEL_MAP["coding"]
+        return {
+            "task": "coding",
+            "model": MODEL_MAP["coding"]
+        }
 
     if any(word in prompt for word in document_keywords):
-        return MODEL_MAP["general"]
+        return {
+            "task": "general",
+            "model": MODEL_MAP["general"]
+        }
 
     if any(word in prompt for word in vision_keywords):
-        return MODEL_MAP["vision"]
+        return {
+            "task": "vision",
+            "model": MODEL_MAP["vision"]
+        }
 
-    return MODEL_MAP["general"]
+    return {
+        "task": "general",
+        "model": MODEL_MAP["general"]
+    }
