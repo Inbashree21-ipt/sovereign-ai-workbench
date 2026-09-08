@@ -21,6 +21,7 @@ sys.path.append(
 
 from ai.ollama_client import ask_model
 from router.model_router import choose_model
+from planner import create_plan
 
 from tools.file_tool import read_file
 from tools.calculator_tool import calculate
@@ -176,118 +177,154 @@ def extract_code(prompt: str):
 
     return None
 
-
 def run_agent(prompt: str):
 
     logger.info("Agent request received")
 
-    tool = select_tool(prompt)
+    plan = create_plan(prompt)
+    logger.info(f"Agent plan created: {plan}")
 
-    logger.info(f"Selected tool: {tool}")
+    results = []
 
     # --------------------------------
-    # File Tool
+    # Execute Planned Steps
     # --------------------------------
 
-    if tool == "file":
+    for step in plan:
 
-        file_path = extract_file_path(prompt)
+        logger.info(f"Executing planned step: {step}")
 
-        logger.info(f"Reading local file: {file_path}")
+        # --------------------------------
+        # File Tool
+        # --------------------------------
 
-        document = read_file(file_path)
+        if step == "file":
 
-        if document == "File not found.":
+            file_path = extract_file_path(prompt)
 
-            logger.warning(
-                f"File not found: {file_path}"
+            logger.info(
+                f"Reading local file: {file_path}"
             )
 
-            return f"File not found: {file_path}"
+            document = read_file(file_path)
 
-        if document.startswith("Could not read"):
+            if document == "File not found.":
 
-            logger.error(
-                f"Could not read file: {file_path}"
-            )
+                logger.warning(
+                    f"File not found: {file_path}"
+                )
 
-            return document
+                results.append(
+                    f"File not found: {file_path}"
+                )
 
-        full_prompt = f"""
+                continue
+
+            if document.startswith("Could not read"):
+
+                logger.error(
+                    f"Could not read file: {file_path}"
+                )
+
+                results.append(document)
+
+                continue
+
+            full_prompt = f"""
 Explain the following local document.
 
 Document:
 {document}
 """
 
-        routing_result = choose_model(prompt)
+            routing_result = choose_model(prompt)
 
-        model = routing_result["model"]
+            model = routing_result["model"]
 
-        logger.info(
-            f"Local model selected: {model}"
-        )
-
-        return ask_model(
-            full_prompt,
-            model
-        )
-
-    # --------------------------------
-    # Calculator Tool
-    # --------------------------------
-
-    elif tool == "calculator":
-
-        logger.info("Running calculator tool")
-
-        return calculator_tool(prompt)
-
-    # --------------------------------
-    # Code Tool
-    # --------------------------------
-
-    elif tool == "code":
-
-        logger.info("Running Python code tool")
-
-        code = extract_code(prompt)
-
-        if code is None:
-
-            logger.warning(
-                "No Python code found in request"
+            logger.info(
+                f"Local model selected: {model}"
             )
 
-            return "Please provide Python code inside a code block."
+            response = ask_model(
+                full_prompt,
+                model
+            )
 
-        return run_python_code(code)
+            results.append(response)
+
+        # --------------------------------
+        # Calculator Tool
+        # --------------------------------
+
+        elif step == "calculator":
+
+            logger.info(
+                "Running calculator tool"
+            )
+
+            response = calculator_tool(prompt)
+
+            results.append(response)
+
+        # --------------------------------
+        # Code Tool
+        # --------------------------------
+
+        elif step == "code":
+
+            logger.info(
+                "Running Python code tool"
+            )
+
+            code = extract_code(prompt)
+
+            if code is None:
+
+                response = (
+                    "Please provide Python code "
+                    "inside a code block."
+                )
+
+            else:
+
+                response = run_python_code(code)
+
+            results.append(response)
+
+        # --------------------------------
+        # General AI
+        # --------------------------------
+
+        elif step == "none":
+
+            logger.info(
+                "No tool required"
+            )
+
+            routing_result = choose_model(prompt)
+
+            model = routing_result["model"]
+
+            logger.info(
+                f"Local model selected: {model}"
+            )
+
+            response = ask_model(
+                prompt,
+                model
+            )
+
+            results.append(response)
 
     # --------------------------------
-    # General AI
+    # Return Combined Results
     # --------------------------------
 
-    else:
+    logger.info(
+        f"Agent completed {len(plan)} planned step(s)"
+    )
 
-        logger.info("No tool required")
-
-        routing_result = choose_model(prompt)
-
-        model = routing_result["model"]
-
-        logger.info(
-            f"Local model selected: {model}"
-        )
-
-        return ask_model(
-            prompt,
-            model
-        )
-
-
-# --------------------------------
-# Local Testing
-# --------------------------------
+    return "\n\n".join(results)
 
 if __name__ == "__main__":
 
