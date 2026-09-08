@@ -1,9 +1,27 @@
+import sys
+import os
+
+# Add backend folder to Python path
+sys.path.append(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
+# Add project root to Python path
+sys.path.append(
+    os.path.dirname(
+        os.path.dirname(
+            os.path.abspath(__file__)
+        )
+    )
+)
+
 from fastapi import FastAPI, UploadFile, File
 from pydantic import BaseModel
 from ollama import chat
 
 from ai.ollama_client import ask_model
 from router.model_router import choose_model
+from agent.agent import run_agent
 
 
 app = FastAPI()
@@ -37,6 +55,16 @@ def ask_ai(request: AskRequest):
         "task": selected_task,
         "model": selected_model,
         "response": answer
+    }
+
+
+@app.post("/agent")
+def agent_request(request: AskRequest):
+
+    result = run_agent(request.prompt)
+
+    return {
+        "response": result
     }
 
 
