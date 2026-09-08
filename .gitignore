@@ -2,3 +2,5 @@ backend/venv/
 __pycache__/
 *.pyc
 .env
+agent/agent_backup.py
+logs/
