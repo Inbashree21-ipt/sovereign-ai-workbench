@@ -5,56 +5,68 @@ MODEL_MAP = {
 }
 
 
+CODING_KEYWORDS = [
+    "code",
+    "python",
+    "java",
+    "program",
+    "debug",
+    "function",
+    "algorithm",
+    "programming"
+]
+
+
+VISION_KEYWORDS = [
+    "image",
+    "photo",
+    "drawing",
+    "scan",
+    "picture",
+    "screenshot",
+    "visual",
+    "diagram"
+]
+
+
+DOCUMENT_KEYWORDS = [
+    "summary",
+    "summarize",
+    "document",
+    "report",
+    "explain",
+    "letter",
+    "manual",
+    "approval note"
+]
+
+
 def choose_model(prompt: str):
 
-    prompt = prompt.lower()
+    prompt = prompt.lower().strip()
 
-    coding_keywords = [
-        "code",
-        "python",
-        "java",
-        "program",
-        "debug",
-        "function"
-    ]
-
-    document_keywords = [
-        "summary",
-        "summarize",
-        "document",
-        "report",
-        "explain",
-        "letter"
-    ]
-
-    vision_keywords = [
-        "image",
-        "photo",
-        "drawing",
-        "scan",
-        "picture",
-        "screenshot",
-        "visual"
-    ]
-
-    if any(word in prompt for word in coding_keywords):
+    # Check coding task
+    if any(word in prompt for word in CODING_KEYWORDS):
         return {
             "task": "coding",
             "model": MODEL_MAP["coding"]
         }
 
-    if any(word in prompt for word in vision_keywords):
+    # Check vision task
+    if any(word in prompt for word in VISION_KEYWORDS):
         return {
             "task": "vision",
             "model": MODEL_MAP["vision"]
         }
 
-    if any(word in prompt for word in document_keywords):
+    # Check document/general task
+    if any(word in prompt for word in DOCUMENT_KEYWORDS):
         return {
             "task": "general",
             "model": MODEL_MAP["general"]
         }
 
+    # Default model
     return {
         "task": "general",
         "model": MODEL_MAP["general"]
