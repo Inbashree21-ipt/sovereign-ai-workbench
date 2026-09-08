@@ -1,6 +1,7 @@
 import sys
 import os
 import re
+import logging
 
 
 # Add backend folder to Python path
@@ -24,6 +25,32 @@ from router.model_router import choose_model
 from tools.file_tool import read_file
 from tools.calculator_tool import calculate
 from tools.code_tool import run_python_code
+
+
+# --------------------------------
+# Logging Setup
+# --------------------------------
+
+LOG_DIR = os.path.join(
+    os.path.dirname(__file__),
+    "..",
+    "logs"
+)
+
+os.makedirs(LOG_DIR, exist_ok=True)
+
+LOG_FILE = os.path.join(
+    LOG_DIR,
+    "agent.log"
+)
+
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
+logger = logging.getLogger(__name__)
 
 
 def select_tool(prompt: str):
@@ -138,10 +165,6 @@ def extract_code(prompt: str):
         return match.group(1)
 
     # Handle plain Python code
-    # Example:
-    # Run this Python code:
-    # print(10 + 20)
-
     marker = re.search(
         r"Run this Python code:\s*(.*)",
         prompt,
@@ -156,7 +179,11 @@ def extract_code(prompt: str):
 
 def run_agent(prompt: str):
 
+    logger.info("Agent request received")
+
     tool = select_tool(prompt)
+
+    logger.info(f"Selected tool: {tool}")
 
     # --------------------------------
     # File Tool
@@ -166,12 +193,24 @@ def run_agent(prompt: str):
 
         file_path = extract_file_path(prompt)
 
+        logger.info(f"Reading local file: {file_path}")
+
         document = read_file(file_path)
 
         if document == "File not found.":
+
+            logger.warning(
+                f"File not found: {file_path}"
+            )
+
             return f"File not found: {file_path}"
 
         if document.startswith("Could not read"):
+
+            logger.error(
+                f"Could not read file: {file_path}"
+            )
+
             return document
 
         full_prompt = f"""
@@ -185,6 +224,10 @@ Document:
 
         model = routing_result["model"]
 
+        logger.info(
+            f"Local model selected: {model}"
+        )
+
         return ask_model(
             full_prompt,
             model
@@ -196,6 +239,8 @@ Document:
 
     elif tool == "calculator":
 
+        logger.info("Running calculator tool")
+
         return calculator_tool(prompt)
 
     # --------------------------------
@@ -204,9 +249,16 @@ Document:
 
     elif tool == "code":
 
+        logger.info("Running Python code tool")
+
         code = extract_code(prompt)
 
         if code is None:
+
+            logger.warning(
+                "No Python code found in request"
+            )
+
             return "Please provide Python code inside a code block."
 
         return run_python_code(code)
@@ -217,9 +269,15 @@ Document:
 
     else:
 
+        logger.info("No tool required")
+
         routing_result = choose_model(prompt)
 
         model = routing_result["model"]
+
+        logger.info(
+            f"Local model selected: {model}"
+        )
 
         return ask_model(
             prompt,
