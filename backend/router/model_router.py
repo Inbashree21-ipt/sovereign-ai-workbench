@@ -1,7 +1,7 @@
 MODEL_MAP = {
     "coding": "qwen2.5-coder:3b",
     "general": "llama3.2:3b",
-    "vision": "llama3.2:3b"
+    "vision": "gemma3:4b"
 }
 
 
@@ -32,7 +32,9 @@ def choose_model(prompt: str):
         "photo",
         "drawing",
         "scan",
-        "picture"
+        "picture",
+        "screenshot",
+        "visual"
     ]
 
     if any(word in prompt for word in coding_keywords):
@@ -41,16 +43,16 @@ def choose_model(prompt: str):
             "model": MODEL_MAP["coding"]
         }
 
-    if any(word in prompt for word in document_keywords):
-        return {
-            "task": "general",
-            "model": MODEL_MAP["general"]
-        }
-
     if any(word in prompt for word in vision_keywords):
         return {
             "task": "vision",
             "model": MODEL_MAP["vision"]
+        }
+
+    if any(word in prompt for word in document_keywords):
+        return {
+            "task": "general",
+            "model": MODEL_MAP["general"]
         }
 
     return {
