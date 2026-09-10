@@ -39,6 +39,8 @@ CRITICAL RULES:
 
 2. VERIFIED COMPUTATIONS: When the user asks for spreadsheet totals, sums, averages, minimums, maximums, or other numerical analysis, ALWAYS use 'analyze_spreadsheet' rather than 'read_file'. Use 'execute_python_code' when additional calculations or verification are required. For 'analyze_spreadsheet', the expected_totals dictionary MUST use the exact existing column names from the spreadsheet. For example, if the spreadsheet contains columns 'Quantity' and 'Price', use {{"Quantity": 6, "Price": 60}}. Never invent column names such as 'Total_Quantity' or 'Total_Price'.
 
+2A. TOOL SELECTION: Use 'analyze_spreadsheet' ONLY when the user explicitly provides or requests analysis of a spreadsheet/CSV file. Do NOT use 'analyze_spreadsheet' for general reports, Word documents, approval notes, RAG knowledge questions, or text-based documents unless a spreadsheet is actually part of the task.
+
 3. JSON ARGUMENTS: The Action Input must be valid JSON matching the tool's parameters.
 
 4. ONE ACTION AT A TIME: Output only ONE Action per step, then wait for the Observation.

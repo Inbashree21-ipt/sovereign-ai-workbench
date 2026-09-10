@@ -140,6 +140,7 @@ class ReActAgent:
             ).strip()
 
             if not response_text and data.get("thinking"):
+
                 response_text = data.get(
                     "thinking",
                     ""
@@ -306,7 +307,8 @@ class ReActAgent:
                     query_text = (
                         q_match.group(1)
                         if q_match
-                        else "pipeline safety and minimum allowable wall thickness"
+                        else
+                        "pipeline safety and minimum allowable wall thickness"
                     )
 
                     action = tool_name
@@ -465,7 +467,6 @@ class ReActAgent:
             )
         ).strip()
 
-        # Remove existing extension before adding it
         filename = re.sub(
             r"\.(docx|xlsx)$",
             "",
@@ -473,7 +474,6 @@ class ReActAgent:
             flags=re.IGNORECASE
         )
 
-        # Make filename Windows-safe
         filename = re.sub(
             r'[<>:"/\\|?*]',
             "_",
@@ -528,8 +528,7 @@ class ReActAgent:
                     start=1
                 ):
 
-                    # Correct format:
-                    # {"heading": "...", "body": "..."}
+                    # Correct format
                     if isinstance(
                         section,
                         dict
@@ -556,7 +555,7 @@ class ReActAgent:
                             }
                         )
 
-                    # If model sends a plain string
+                    # Model sends plain string
                     elif isinstance(
                         section,
                         str
@@ -569,58 +568,71 @@ class ReActAgent:
                             }
                         )
 
-                       # ----------------------------------------------------
-                       # If model supplied no useful sections OR
-                       # the sections have empty bodies, use the RAG observation.
-                       # ----------------------------------------------------
-
-                        # ----------------------------------------------------
-            # Detect empty sections OR outline-only sections.
-            # Example:
-            #   Section 1 -> Introduction
-            #   Section 2 -> Safety Requirements
-            #   Section 3 -> Conclusion
-            #
-            # These are headings, not actual document content.
-            # Use the RAG observation instead.
+            # ----------------------------------------------------
+            # Detect useless / outline-only sections
             # ----------------------------------------------------
 
             outline_only = (
                 normalized_sections
                 and all(
-                    section.get("heading", "")
+                    section.get(
+                        "heading",
+                        ""
+                    )
                     .strip()
                     .lower()
                     .startswith("section ")
-                    and section.get("body", "").strip()
+                    and
+                    section.get(
+                        "body",
+                        ""
+                    ).strip()
                     for section in normalized_sections
                 )
             )
 
             if (
                 not normalized_sections
-                or all(
-                    not section.get("body", "").strip()
+                or
+                all(
+                    not section.get(
+                        "body",
+                        ""
+                    ).strip()
                     for section in normalized_sections
                 )
-                or outline_only
+                or
+                outline_only
             ):
+
                 rag_observation = str(
                     previous_observation or ""
                 ).strip()
 
                 if rag_observation:
+
                     normalized_sections = [
+
                         {
-                            "heading": "Pipeline Safety Findings",
-                            "body": rag_observation
+                            "heading":
+                                "Pipeline Safety Findings",
+
+                            "body":
+                                rag_observation
                         },
+
                         {
-                            "heading": "Requested Task",
-                            "body": user_prompt
+                            "heading":
+                                "Requested Task",
+
+                            "body":
+                                user_prompt
                         }
+
                     ]
+
                 else:
+
                     normalized_sections = []
 
             args["sections"] = normalized_sections
@@ -858,8 +870,7 @@ class ReActAgent:
 
             # ----------------------------------------------------
             # IMPORTANT:
-            # If generating a deliverable, normalize
-            # the model's arguments before execution.
+            # Normalize deliverable arguments
             # ----------------------------------------------------
 
             if action == "generate_deliverable":
@@ -886,9 +897,8 @@ class ReActAgent:
             observation = (
                 tool_res.output
                 if tool_res.success
-                else (
-                    f"Error: {tool_res.error}"
-                )
+                else
+                f"Error: {tool_res.error}"
             )
 
             previous_observation = observation
@@ -989,8 +999,12 @@ class ReActAgent:
             # STOP CONDITION 4
             # RAG search
             #
-            # Only stop if the user did NOT request
-            # a deliverable.
+            # Normal knowledge question:
+            #   stop after successful RAG.
+            #
+            # Deliverable request:
+            #   force the next action to be
+            #   generate_deliverable.
             # ====================================================
 
             if (
@@ -1006,24 +1020,43 @@ class ReActAgent:
 
                     break
 
-                # For deliverable requests:
-                # continue to document generation.
+                # ------------------------------------------------
+                # IMPORTANT SYSTEM INSTRUCTION
+                # ------------------------------------------------
+                #
+                # RAG has already returned the required knowledge.
+                # Do not allow the small model to select unrelated
+                # tools after this point.
+                #
+                # The next action must be generate_deliverable.
+                # ------------------------------------------------
+
                 running_history += (
-                    "\nIMPORTANT: The knowledge search "
-                    "has completed successfully.\n"
-                    "Use the retrieved information to "
-                    "create the requested deliverable.\n"
-                    "Do NOT invent Python functions.\n"
-                    "Do NOT use execute_python_code "
-                    "to create the Word document.\n"
-                    "Use generate_deliverable directly.\n"
+                    "\nIMPORTANT SYSTEM INSTRUCTION:\n"
+                    "The company knowledge search completed "
+                    "successfully.\n"
+                    "The retrieved knowledge is the source "
+                    "material for the requested deliverable.\n\n"
+                    "NEXT ACTION MUST BE:\n"
+                    "generate_deliverable\n\n"
+                    "DO NOT call:\n"
+                    "- analyze_spreadsheet\n"
+                    "- execute_python_code\n"
+                    "- search_company_knowledge again\n"
+                    "- read_file unless explicitly required\n\n"
+                    "Create the requested Word/Excel deliverable "
+                    "directly using generate_deliverable.\n"
+                    "Use the retrieved Observation as the document "
+                    "content when appropriate.\n"
+                    "Do not invent missing spreadsheet files, "
+                    "Python functions, calculations, or sources.\n"
+                    "After generate_deliverable succeeds, provide "
+                    "the Final Answer.\n"
                 )
 
             # ====================================================
             # STOP CONDITION 5
             # Successful deliverable generation
-            #
-            # THIS IS THE IMPORTANT FIX.
             # ====================================================
 
             if (
@@ -1121,4 +1154,3 @@ class ReActAgent:
             task_type=actual_task_type,
             deliverables=deliverables,
         )
-
