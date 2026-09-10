@@ -21,7 +21,7 @@ from ollama import chat
 
 from ai.ollama_client import ask_model
 from router.model_router import choose_model
-from agent.agent import run_agent
+from agent.core import ReActAgent
 
 
 app = FastAPI()
@@ -61,10 +61,17 @@ def ask_ai(request: AskRequest):
 @app.post("/agent")
 def agent_request(request: AskRequest):
 
-    result = run_agent(request.prompt)
+    agent = ReActAgent()
+
+    result = agent.run(request.prompt)
 
     return {
-        "response": result
+        "response": result.final_answer,
+        "success": result.success,
+        "model": result.model_used,
+        "task": result.task_type,
+        "steps": len(result.steps),
+        "deliverables": result.deliverables
     }
 
 

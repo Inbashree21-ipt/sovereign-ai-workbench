@@ -20,7 +20,7 @@ sys.path.append(
 
 
 from ai.ollama_client import ask_model
-from router.model_router import choose_model
+from backend.router.model_router import choose_model
 from planner import create_plan
 
 from tools.file_tool import read_file
@@ -177,7 +177,14 @@ def extract_code(prompt: str):
 
     return None
 
-def run_agent(prompt: str):
+def run_react_agent(prompt: str):
+    from agent.core import ReActAgent
+
+    agent = ReActAgent()
+
+    result = agent.run(prompt)
+
+    return result.final_answer
 
     logger.info("Agent request received")
 
