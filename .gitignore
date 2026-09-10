@@ -3,4 +3,6 @@ __pycache__/
 *.pyc
 .env
 agent/agent_backup.py
+logs/workspace/
 logs/
+workspace/
