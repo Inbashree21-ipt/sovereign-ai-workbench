@@ -1,5 +1,6 @@
 import sys
 import os
+from pathlib import Path
 
 # Add backend folder to Python path
 sys.path.append(
@@ -16,6 +17,8 @@ sys.path.append(
 )
 
 from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from ollama import chat
 
@@ -24,12 +27,47 @@ from router.model_router import choose_model
 from agent.core import ReActAgent
 
 
+# --------------------------------------------------
+# FastAPI Application
+# --------------------------------------------------
+
 app = FastAPI()
 
+
+# --------------------------------------------------
+# Deliverables Folder
+# --------------------------------------------------
+
+DELIVERABLES_DIR = Path("workspace/deliverables")
+
+
+# --------------------------------------------------
+# CORS - Allow React Frontend
+# --------------------------------------------------
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# --------------------------------------------------
+# Request Model
+# --------------------------------------------------
 
 class AskRequest(BaseModel):
     prompt: str
 
+
+# --------------------------------------------------
+# Home
+# --------------------------------------------------
 
 @app.get("/")
 def home():
@@ -37,6 +75,10 @@ def home():
         "message": "Sovereign AI Workbench Backend is running!"
     }
 
+
+# --------------------------------------------------
+# Normal AI Request
+# --------------------------------------------------
 
 @app.post("/ask")
 def ask_ai(request: AskRequest):
@@ -58,6 +100,10 @@ def ask_ai(request: AskRequest):
     }
 
 
+# --------------------------------------------------
+# Agent Request
+# --------------------------------------------------
+
 @app.post("/agent")
 def agent_request(request: AskRequest):
 
@@ -74,6 +120,10 @@ def agent_request(request: AskRequest):
         "deliverables": result.deliverables
     }
 
+
+# --------------------------------------------------
+# Vision Request
+# --------------------------------------------------
 
 @app.post("/vision")
 async def analyze_image(
@@ -100,3 +150,82 @@ async def analyze_image(
         "filename": image.filename,
         "response": response["message"]["content"]
     }
+
+
+# --------------------------------------------------
+# Generated Deliverables
+# --------------------------------------------------
+
+@app.get("/deliverables")
+def get_deliverables():
+
+    files = []
+
+    if DELIVERABLES_DIR.exists():
+
+        for file in DELIVERABLES_DIR.iterdir():
+
+            if file.is_file():
+
+                files.append({
+                    "name": file.name,
+                    "size": file.stat().st_size,
+                    "createdAt": file.stat().st_mtime
+                })
+
+    return {
+        "files": files
+    }
+
+
+# --------------------------------------------------
+# Download Generated Deliverable
+# --------------------------------------------------
+
+@app.get("/deliverables/download/{filename}")
+def download_deliverable(filename: str):
+
+    file_path = DELIVERABLES_DIR / filename
+
+    if not file_path.exists() or not file_path.is_file():
+        return {
+            "error": "File not found"
+        }
+
+    return FileResponse(
+        path=file_path,
+        filename=file_path.name
+    )
+
+
+# --------------------------------------------------
+# Installed Local Models
+# --------------------------------------------------
+
+@app.get("/models")
+def get_models():
+
+    try:
+        from ollama import list
+
+        response = list()
+
+        models = []
+
+        for model in response.models:
+
+            models.append({
+                "name": model.model,
+                "size": model.size
+            })
+
+        return {
+            "models": models
+        }
+
+    except Exception as error:
+
+        return {
+            "models": [],
+            "error": str(error)
+        }
