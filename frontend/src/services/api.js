@@ -18,76 +18,48 @@ const BACKEND_URL = 'http://127.0.0.1:8000';
 
 
 /* =========================================================
-   MOCK DOCUMENT STORAGE
-   ========================================================= */
-
-let documentsStore = [
-  {
-    id: 'doc-1',
-    name: 'Safety_SOP_2025.pdf',
-    category: 'Safety & SOP',
-    type: 'PDF',
-    size: '4.2 MB',
-    uploadDate: '2026-09-01',
-    status: 'Indexed',
-    chunksCount: 142,
-    confidence: '99.4%'
-  },
-  {
-    id: 'doc-2',
-    name: 'Inspection_Report_Turbine_A.pdf',
-    category: 'Inspection Log',
-    type: 'PDF',
-    size: '8.7 MB',
-    uploadDate: '2026-09-04',
-    status: 'Indexed',
-    chunksCount: 288,
-    confidence: '98.9%'
-  },
-  {
-    id: 'doc-3',
-    name: 'Maintenance_Manual_Refinery_V3.pdf',
-    category: 'Maintenance',
-    type: 'Maintenance',
-    size: '18.1 MB',
-    uploadDate: '2026-09-06',
-    status: 'Indexed',
-    chunksCount: 512,
-    confidence: '99.8%'
-  },
-  {
-    id: 'doc-4',
-    name: 'Environmental_Compliance_Audit.docx',
-    category: 'Audit',
-    type: 'DOCX',
-    size: '2.9 MB',
-    uploadDate: '2026-09-07',
-    status: 'Processing',
-    chunksCount: 64,
-    confidence: '95.0%'
-  }
-];
-
-
-/* =========================================================
    SYSTEM TELEMETRY API
    ========================================================= */
 
 export const getSystemStatus = async () => {
-  try {
-    const response = await fetch(
-      `${BACKEND_URL}/models`
-    );
 
-    if (!response.ok) {
+  try {
+
+    const [modelsResponse, ragResponse] =
+      await Promise.all([
+        fetch(`${BACKEND_URL}/models`),
+        fetch(`${BACKEND_URL}/rag/status`)
+      ]);
+
+
+    if (!modelsResponse.ok) {
+
       throw new Error(
-        `Backend error: ${response.status}`
+        `Models backend error: ${modelsResponse.status}`
       );
+
     }
 
-    const data = await response.json();
 
-    const models = data.models || [];
+    if (!ragResponse.ok) {
+
+      throw new Error(
+        `RAG backend error: ${ragResponse.status}`
+      );
+
+    }
+
+
+    const modelsData =
+      await modelsResponse.json();
+
+    const ragData =
+      await ragResponse.json();
+
+
+    const models =
+      modelsData.models || [];
+
 
     const primaryModel =
       models.find((model) =>
@@ -96,10 +68,14 @@ export const getSystemStatus = async () => {
           .includes('qwen2.5-coder')
       ) || models[0];
 
-    return {
-      environment: 'LOCAL / ON-PREMISE',
 
-      localServerUrl: BACKEND_URL,
+    return {
+
+      environment:
+        'LOCAL / ON-PREMISE',
+
+      localServerUrl:
+        BACKEND_URL,
 
       activeModel:
         primaryModel?.name ||
@@ -109,7 +85,17 @@ export const getSystemStatus = async () => {
         models.length,
 
       totalDocuments:
-        documentsStore.length,
+        ragData.totalDocuments || 0,
+
+      indexedChunksTotal:
+        ragData.indexedChunksTotal || 0,
+
+      vectorStore:
+        ragData.vectorStore || 'FAISS',
+
+      embeddingModel:
+        ragData.embeddingModel ||
+        'sentence-transformers/all-MiniLM-L6-v2',
 
       networkStatus:
         'Local Backend',
@@ -122,6 +108,7 @@ export const getSystemStatus = async () => {
 
       cloudApiDisabled:
         true
+
     };
 
   } catch (error) {
@@ -131,7 +118,9 @@ export const getSystemStatus = async () => {
       error
     );
 
+
     return {
+
       environment:
         'LOCAL / ON-PREMISE',
 
@@ -145,7 +134,16 @@ export const getSystemStatus = async () => {
         0,
 
       totalDocuments:
-        documentsStore.length,
+        0,
+
+      indexedChunksTotal:
+        0,
+
+      vectorStore:
+        'FAISS',
+
+      embeddingModel:
+        'sentence-transformers/all-MiniLM-L6-v2',
 
       networkStatus:
         'Backend Unavailable',
@@ -158,8 +156,11 @@ export const getSystemStatus = async () => {
 
       cloudApiDisabled:
         true
+
     };
+
   }
+
 };
 
 
@@ -183,9 +184,11 @@ export const sendChatMessage = async (
    * Vision  -> gemma3:4b
    */
 
+
   const response = await fetch(
     `${BACKEND_URL}/ask`,
     {
+
       method: 'POST',
 
       headers: {
@@ -195,8 +198,10 @@ export const sendChatMessage = async (
       body: JSON.stringify({
         prompt: userPrompt,
       }),
+
     }
   );
+
 
   if (!response.ok) {
 
@@ -206,8 +211,10 @@ export const sendChatMessage = async (
 
   }
 
+
   const data =
     await response.json();
+
 
   return {
 
@@ -243,6 +250,7 @@ export const sendChatMessage = async (
     ],
 
   };
+
 };
 
 
@@ -263,6 +271,7 @@ export const analyzeImage = async (
 
   }
 
+
   /*
    * FastAPI /vision expects:
    *
@@ -270,47 +279,61 @@ export const analyzeImage = async (
    * image  -> uploaded image file
    */
 
+
   const formData =
     new FormData();
+
 
   formData.append(
     'prompt',
     prompt
   );
 
+
   formData.append(
     'image',
     imageFile
   );
 
+
   const response =
     await fetch(
       `${BACKEND_URL}/vision`,
       {
+
         method: 'POST',
 
         body: formData,
+
       }
     );
+
 
   if (!response.ok) {
 
     let errorMessage =
       `Vision backend error: ${response.status}`;
 
+
     try {
 
       const errorData =
         await response.json();
 
+
       if (errorData.detail) {
+
         errorMessage =
           errorData.detail;
+
       }
 
     } catch {
+
       // Keep default error message.
+
     }
+
 
     throw new Error(
       errorMessage
@@ -318,8 +341,10 @@ export const analyzeImage = async (
 
   }
 
+
   const data =
     await response.json();
+
 
   return {
 
@@ -373,100 +398,190 @@ export const analyzeImage = async (
    DOCUMENTS API
    ========================================================= */
 
+/*
+ * Documents are now managed by the real
+ * Member 3 FastAPI RAG backend.
+ *
+ * Backend endpoints:
+ *
+ * GET    /rag/documents
+ * POST   /rag/upload
+ * DELETE /rag/documents/{filename}
+ */
+
+
+/* ---------------------------------------------------------
+   Get Documents
+   --------------------------------------------------------- */
+
 export const getDocuments = async () => {
 
-  return [
-    ...documentsStore
-  ];
+  const response =
+    await fetch(
+      `${BACKEND_URL}/rag/documents`
+    );
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      `Documents backend error: ${response.status}`
+    );
+
+  }
+
+
+  const data =
+    await response.json();
+
+
+  return data.documents || [];
 
 };
 
+
+/* ---------------------------------------------------------
+   Upload Document
+   --------------------------------------------------------- */
 
 export const uploadDocument = async (
   fileObj
 ) => {
 
-  await new Promise(
-    resolve =>
-      setTimeout(
-        resolve,
-        600
-      )
+  if (!fileObj) {
+
+    throw new Error(
+      'No document file was provided.'
+    );
+
+  }
+
+
+  const formData =
+    new FormData();
+
+
+  formData.append(
+    'file',
+    fileObj
   );
 
-  const newDoc = {
 
-    id:
-      `doc-${Date.now()}`,
+  const response =
+    await fetch(
+      `${BACKEND_URL}/rag/upload`,
+      {
 
-    name:
-      fileObj.name ||
-      'Uploaded_Document.pdf',
+        method: 'POST',
 
-    category:
-      'User Upload',
+        body: formData,
 
-    type:
-      fileObj.name
-        ? fileObj.name
-            .split('.')
-            .pop()
-            .toUpperCase()
-        : 'PDF',
+      }
+    );
 
-    size:
-      fileObj.size
-        ? `${(
-            fileObj.size /
-            (1024 * 1024)
-          ).toFixed(1)} MB`
-        : '3.5 MB',
 
-    uploadDate:
-      new Date()
-        .toISOString()
-        .split('T')[0],
+  if (!response.ok) {
 
-    status:
-      'Indexed',
+    let errorMessage =
+      `Document upload error: ${response.status}`;
 
-    chunksCount:
-      Math.floor(
-        Math.random() * 150
-      ) + 20,
 
-    confidence:
-      '99.1%'
+    try {
 
-  };
+      const errorData =
+        await response.json();
 
-  documentsStore.unshift(
-    newDoc
-  );
 
-  return newDoc;
+      if (errorData.detail) {
+
+        errorMessage =
+          errorData.detail;
+
+      }
+
+    } catch {
+
+      // Keep default error message.
+
+    }
+
+
+    throw new Error(
+      errorMessage
+    );
+
+  }
+
+
+  const data =
+    await response.json();
+
+
+  return data.document || data;
 
 };
 
+
+/* ---------------------------------------------------------
+   Delete Document
+   --------------------------------------------------------- */
 
 export const deleteDocument = async (
   id
 ) => {
 
-  documentsStore =
-    documentsStore.filter(
-      d =>
-        d.id !== id
+  if (!id) {
+
+    throw new Error(
+      'Document filename is required.'
     );
 
-  return {
+  }
 
-    success:
-      true,
 
-    id
+  const response =
+    await fetch(
+      `${BACKEND_URL}/rag/documents/${encodeURIComponent(id)}`,
+      {
+        method: 'DELETE',
+      }
+    );
 
-  };
+
+  if (!response.ok) {
+
+    let errorMessage =
+      `Document deletion error: ${response.status}`;
+
+
+    try {
+
+      const errorData =
+        await response.json();
+
+
+      if (errorData.detail) {
+
+        errorMessage =
+          errorData.detail;
+
+      }
+
+    } catch {
+
+      // Keep default error message.
+
+    }
+
+
+    throw new Error(
+      errorMessage
+    );
+
+  }
+
+
+  return await response.json();
 
 };
 
@@ -479,98 +594,67 @@ export const searchKnowledgeBase = async (
   query
 ) => {
 
-  await new Promise(
-    resolve =>
-      setTimeout(
-        resolve,
-        400
-      )
-  );
-
-  const mockChunks = [
-
-    {
-      id:
-        'chk-101',
-
-      docName:
-        'Safety_SOP_2025.pdf',
-
-      page:
-        14,
-
-      similarity:
-        '98.7%',
-
-      chunkText:
-        `SECTION 4.2 - AIR-GAPPED CONTROL ROOM OPERATING PROCEDURES: All high-pressure steam valves (V-102 through V-118) must be physically tagged and logged prior to scheduled maintenance shutdowns. Local PLC telemetry is mirrored every 300 seconds.`
-
-    },
-
-    {
-      id:
-        'chk-102',
-
-      docName:
-        'Inspection_Report_Turbine_A.pdf',
-
-      page:
-        8,
-
-      similarity:
-        '94.2%',
-
-      chunkText:
-        `PARAGRAPH 3.1 - TURBINE BLADE WEAR ASSESSMENT: Vibration analysis indicated a frequency anomaly at 120 Hz during full-load testing. Recommended rotor balancing during upcoming Q4 turnaround.`
-
-    },
-
-    {
-      id:
-        'chk-103',
-
-      docName:
-        'Maintenance_Manual_Refinery_V3.pdf',
-
-      page:
-        142,
-
-      similarity:
-        '89.5%',
-
-      chunkText:
-        `APPENDIX B - RECTIFIER OVERHAUL SPECIFICATIONS: Replace main silicon diodes if reverse leakage current exceeds 15mA at peak reverse voltage. Use only certified OEM replacement kits.`
-
-    }
-
-  ];
-
   if (
     !query ||
     query.trim() === ''
   ) {
 
-    return mockChunks;
+    return [];
 
   }
 
-  return mockChunks.filter(
-    c =>
 
-      c.chunkText
-        .toLowerCase()
-        .includes(
-          query.toLowerCase()
-        )
+  const response = await fetch(
+    `${BACKEND_URL}/rag/search`,
+    {
 
-      ||
+      method: 'POST',
 
-      c.docName
-        .toLowerCase()
-        .includes(
-          query.toLowerCase()
-        )
+      headers: {
+        'Content-Type': 'application/json',
+      },
+
+      body: JSON.stringify({
+        question: query,
+      }),
+
+    }
   );
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      `RAG search backend error: ${response.status}`
+    );
+
+  }
+
+
+  const data =
+    await response.json();
+
+
+  return (
+    data.results || []
+  ).map((result) => ({
+
+    id:
+      result.id,
+
+    docName:
+      result.docName,
+
+    page:
+      result.page,
+
+    distance:
+      result.distance,
+
+    chunkText:
+      result.chunkText,
+
+  }));
 
 };
 
@@ -590,25 +674,28 @@ export const createAgentTask = async (
   taskData
 ) => {
 
-  const response = await fetch(
-    `${BACKEND_URL}/agent`,
-    {
-      method: 'POST',
+  const response =
+    await fetch(
+      `${BACKEND_URL}/agent`,
+      {
 
-      headers: {
-        'Content-Type':
-          'application/json',
-      },
+        method: 'POST',
 
-      body: JSON.stringify({
+        headers: {
+          'Content-Type':
+            'application/json',
+        },
 
-        prompt:
-          `${taskData.title}. Source document: ${taskData.sourceDocument}. Output format: ${taskData.outputFormat}.`
+        body: JSON.stringify({
 
-      }),
+          prompt:
+            `${taskData.title}. Source document: ${taskData.sourceDocument}. Output format: ${taskData.outputFormat}.`
 
-    }
-  );
+        }),
+
+      }
+    );
+
 
   if (!response.ok) {
 
@@ -618,8 +705,10 @@ export const createAgentTask = async (
 
   }
 
+
   const data =
     await response.json();
+
 
   return {
 
@@ -724,6 +813,7 @@ export const getModels = async () => {
       `${BACKEND_URL}/models`
     );
 
+
   if (!response.ok) {
 
     throw new Error(
@@ -732,8 +822,10 @@ export const getModels = async () => {
 
   }
 
+
   const data =
     await response.json();
+
 
   return data.models || [];
 
@@ -757,6 +849,7 @@ export const toggleModelStatus = async (
     modelId
   );
 
+
   return await getModels();
 
 };
@@ -773,6 +866,7 @@ export const getGeneratedFiles = async () => {
       `${BACKEND_URL}/deliverables`
     );
 
+
   if (!response.ok) {
 
     throw new Error(
@@ -781,8 +875,10 @@ export const getGeneratedFiles = async () => {
 
   }
 
+
   const data =
     await response.json();
+
 
   return data.files || [];
 
@@ -802,6 +898,7 @@ export const deleteGeneratedFile = async (
     'Generated file deletion is not connected to the backend:',
     id
   );
+
 
   return {
 
@@ -827,8 +924,11 @@ export const getDeliverableDownloadUrl = (
 ) => {
 
   if (!filename) {
+
     return null;
+
   }
+
 
   return (
     `${BACKEND_URL}/deliverables/download/` +
