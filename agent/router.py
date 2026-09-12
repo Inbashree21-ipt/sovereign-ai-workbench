@@ -1,131 +1,428 @@
 """
 Multi-Model Router for Sovereign Industrial Workbench
-Fulfills SIH Problem Statement 26117 Part 4: 'Multi-model routing (not locked to one model)'
-Routes tasks dynamically to the best local open-weight model:
-- Coding tasks -> coding model (e.g. qwen2.5-coder:7b or active local model)
-- Document reasoning / summarization -> reasoning model (e.g. qwen2.5:14b or active local model)
-- Visual inspection / P&ID -> vision model (e.g. llama3.2-vision:11b)
-- General workflow -> general model
+SIH Problem Statement 26117
+
+Routes tasks dynamically to the appropriate local model:
+- Coding tasks -> coding model
+- Document reasoning / summarization -> reasoning model
+- Visual inspection / P&ID -> vision model
+- General questions -> general model
 """
 
-import re
 import json
 import urllib.request
 from typing import Dict, Any, Tuple, Optional
+
 from config import MODEL_REGISTRY, DEFAULT_MODEL, OLLAMA_BASE_URL
 
 
 class ModelRouter:
     """
-    Classifies incoming user tasks and routes them to the appropriate local model endpoint.
-    Designed for zero-rearchitecting extensibility: adding a model is 1 dictionary line.
+    Classifies incoming user tasks and routes them
+    to the appropriate local model.
     """
 
-    def __init__(self, registry: Optional[Dict[str, Dict[str, Any]]] = None, base_url: str = OLLAMA_BASE_URL):
+    def __init__(
+        self,
+        registry: Optional[Dict[str, Dict[str, Any]]] = None,
+        base_url: str = OLLAMA_BASE_URL
+    ):
         self.registry = registry or MODEL_REGISTRY
         self.base_url = base_url
         self._installed_models_cache = None
 
+    # ============================================================
+    # GET INSTALLED OLLAMA MODELS
+    # ============================================================
+
     def get_installed_models(self) -> list:
-        """Queries local Ollama to find what models are currently downloaded."""
+        """Queries local Ollama for downloaded models."""
+
         try:
-            req = urllib.request.Request(f"{self.base_url}/api/tags")
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                return [m.get("name") for m in data.get("models", [])]
+
+            req = urllib.request.Request(
+                f"{self.base_url}/api/tags"
+            )
+
+            with urllib.request.urlopen(
+                req,
+                timeout=3
+            ) as resp:
+
+                data = json.loads(
+                    resp.read().decode("utf-8")
+                )
+
+                return [
+                    m.get("name")
+                    for m in data.get("models", [])
+                    if m.get("name")
+                ]
+
         except Exception:
+
             return [DEFAULT_MODEL]
 
-    def classify_task_fast(self, prompt: str) -> str:
-        """
-        Fast heuristic classification based on keyword signals.
-        Returns: 'coding', 'vision', 'reasoning', or 'general'.
-        """
-        p_lower = prompt.lower()
+    # ============================================================
+    # FAST TASK CLASSIFICATION
+    # ============================================================
 
-        # Vision signals
-        if any(w in p_lower for w in ["image", "photo", "p&id", "drawing", "scan", "handwritten", "schematic", "ocr"]):
+    def classify_task_fast(
+        self,
+        prompt: str
+    ) -> str:
+
+        """
+        Fast heuristic classification.
+
+        Returns:
+            coding
+            vision
+            reasoning
+            general
+        """
+
+        p_lower = prompt.lower().strip()
+
+        # --------------------------------------------------------
+        # VISION
+        # --------------------------------------------------------
+
+        vision_keywords = [
+            "image",
+            "photo",
+            "p&id",
+            "drawing",
+            "scan",
+            "handwritten",
+            "schematic",
+            "ocr",
+            "picture",
+            "screenshot",
+            "visual",
+            "diagram"
+        ]
+
+        if any(
+            word in p_lower
+            for word in vision_keywords
+        ):
+
             return "vision"
 
-        # Coding / Calculation / Scripting signals
-        if any(w in p_lower for w in ["code", "python", "script", "calculate", "sum", "math", "validate spreadsheet", "totals", "regex", "algorithm", "debug", "sandbox"]):
+        # --------------------------------------------------------
+        # CODING
+        # --------------------------------------------------------
+        #
+        # IMPORTANT:
+        # Do NOT use "python" alone as a coding keyword.
+        #
+        # Example:
+        # "What is Python?"
+        # -> general
+        #
+        # But:
+        # "Write a Python program"
+        # -> coding
+        #
+        # --------------------------------------------------------
+
+        coding_keywords = [
+            "write code",
+            "write a program",
+            "create a program",
+            "generate code",
+            "python program",
+            "python code",
+            "java program",
+            "java code",
+            "c program",
+            "c++ program",
+            "javascript code",
+            "javascript program",
+            "code for",
+            "program for",
+            "coding",
+            "script",
+            "calculate",
+            "calculate using code",
+            "sum using python",
+            "math using python",
+            "validate spreadsheet",
+            "totals",
+            "regex",
+            "algorithm",
+            "debug",
+            "debug this",
+            "fix this code",
+            "execute code",
+            "run code",
+            "sandbox"
+        ]
+
+        if any(
+            word in p_lower
+            for word in coding_keywords
+        ):
+
             return "coding"
 
-        # Deep reasoning / Document drafting signals
-        if any(w in p_lower for w in ["approval note", "memo", "compliance", "sop", "standard operating", "regulation", "summarize report", "policy", "investigation"]):
+        # --------------------------------------------------------
+        # REASONING / DOCUMENT TASKS
+        # --------------------------------------------------------
+
+        reasoning_keywords = [
+            "approval note",
+            "memo",
+            "compliance",
+            "sop",
+            "standard operating",
+            "regulation",
+            "summarize report",
+            "summarise report",
+            "summarize document",
+            "summarise document",
+            "summary of report",
+            "summary of document",
+            "policy",
+            "investigation",
+            "analyze report",
+            "analyse report",
+            "review report",
+            "explain report",
+            "explain document"
+        ]
+
+        if any(
+            word in p_lower
+            for word in reasoning_keywords
+        ):
+
             return "reasoning"
+
+        # --------------------------------------------------------
+        # GENERAL
+        # --------------------------------------------------------
 
         return "general"
 
-    def classify_with_llm(self, prompt: str, classifier_model: Optional[str] = None) -> str:
+    # ============================================================
+    # OPTIONAL LLM CLASSIFIER
+    # ============================================================
+
+    def classify_with_llm(
+        self,
+        prompt: str,
+        classifier_model: Optional[str] = None
+    ) -> str:
+
         """
-        Optional lightweight LLM classifier pass (as described in SIH brief Part 4).
+        Optional lightweight LLM classifier.
+
+        Used only when explicitly called.
         """
-        model = classifier_model or DEFAULT_MODEL
+
+        model = (
+            classifier_model
+            or DEFAULT_MODEL
+        )
+
         classify_prompt = (
-            "You are a fast task classifier for an industrial AI workbench.\n"
-            "Classify the following user prompt into exactly ONE category from: [CODING, REASONING, VISION, GENERAL].\n"
-            "Respond ONLY with the category word in uppercase and nothing else.\n\n"
+            "You are a fast task classifier for an "
+            "industrial AI workbench.\n"
+            "Classify the following user prompt into "
+            "exactly ONE category from: "
+            "[CODING, REASONING, VISION, GENERAL].\n"
+            "A question asking what a programming language "
+            "is should be GENERAL unless the user asks "
+            "to write, debug, execute, or modify code.\n"
+            "Respond ONLY with the category word "
+            "in uppercase and nothing else.\n\n"
             f"Prompt: {prompt[:300]}\n\n"
             "Category:"
         )
 
         try:
-            payload = json.dumps({
-                "model": model,
-                "prompt": classify_prompt,
-                "stream": False,
-                "options": {"temperature": 0.0, "num_predict": 10},
-            }).encode("utf-8")
+
+            payload = json.dumps(
+                {
+                    "model": model,
+                    "prompt": classify_prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.0,
+                        "num_predict": 10
+                    },
+                }
+            ).encode("utf-8")
 
             req = urllib.request.Request(
                 f"{self.base_url}/api/generate",
                 data=payload,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json"
+                },
             )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                raw_cat = data.get("response", "").strip().upper()
-                for cat in ["CODING", "REASONING", "VISION", "GENERAL"]:
-                    if cat in raw_cat:
-                        return cat.lower()
+
+            with urllib.request.urlopen(
+                req,
+                timeout=5
+            ) as resp:
+
+                data = json.loads(
+                    resp.read().decode("utf-8")
+                )
+
+                raw_cat = (
+                    data
+                    .get("response", "")
+                    .strip()
+                    .upper()
+                )
+
+                for category in [
+                    "CODING",
+                    "REASONING",
+                    "VISION",
+                    "GENERAL"
+                ]:
+
+                    if category in raw_cat:
+
+                        return category.lower()
+
         except Exception:
+
             pass
 
-        # Fallback to fast heuristic if LLM call times out or errors
-        return self.classify_task_fast(prompt)
+        return self.classify_task_fast(
+            prompt
+        )
 
-    def route(self, prompt: str, task_type: Optional[str] = None) -> Tuple[str, str, Dict[str, Any]]:
+    # ============================================================
+    # ROUTE TASK
+    # ============================================================
+
+    def route(
+        self,
+        prompt: str,
+        task_type: Optional[str] = None
+    ) -> Tuple[
+        str,
+        str,
+        Dict[str, Any]
+    ]:
+
         """
-        Routes the task to (target_model, target_endpoint, metadata).
-        Guarantees fallback if the specialized model is not yet pulled into Ollama.
+        Routes task to:
+
+        (
+            selected_model,
+            endpoint,
+            metadata
+        )
         """
+
+        # --------------------------------------------------------
+        # Classify task
+        # --------------------------------------------------------
+
         if not task_type:
-            task_type = self.classify_task_fast(prompt)
 
-        spec = self.registry.get(task_type, self.registry["general"])
-        desired_model = spec.get("model", DEFAULT_MODEL)
-        endpoint = spec.get("endpoint", self.base_url)
+            task_type = (
+                self.classify_task_fast(
+                    prompt
+                )
+            )
 
-        # Check if desired model is installed, fallback if not
-        installed = self.get_installed_models()
+        # --------------------------------------------------------
+        # Get model configuration
+        # --------------------------------------------------------
+
+        spec = self.registry.get(
+            task_type,
+            self.registry["general"]
+        )
+
+        desired_model = spec.get(
+            "model",
+            DEFAULT_MODEL
+        )
+
+        endpoint = spec.get(
+            "endpoint",
+            self.base_url
+        )
+
+        # --------------------------------------------------------
+        # Check installed models
+        # --------------------------------------------------------
+
+        installed = (
+            self.get_installed_models()
+        )
+
         chosen_model = desired_model
 
-        # If desired_model not in installed list (or without tag), check fallback
-        model_base_names = [m.split(":")[0] for m in installed]
-        desired_base = desired_model.split(":")[0]
+        model_base_names = [
+            m.split(":")[0]
+            for m in installed
+        ]
 
-        if desired_model not in installed and desired_base not in model_base_names:
-            # Fall back to default installed model
-            chosen_model = installed[0] if installed else DEFAULT_MODEL
+        desired_base = (
+            desired_model.split(":")[0]
+        )
+
+        # --------------------------------------------------------
+        # Fallback if model isn't installed
+        # --------------------------------------------------------
+
+        if (
+            desired_model not in installed
+            and
+            desired_base not in model_base_names
+        ):
+
+            chosen_model = (
+                installed[0]
+                if installed
+                else DEFAULT_MODEL
+            )
+
+        # --------------------------------------------------------
+        # Routing metadata
+        # --------------------------------------------------------
 
         metadata = {
-            "task_type": task_type,
-            "desired_model": desired_model,
-            "routed_model": chosen_model,
-            "endpoint": endpoint,
-            "description": spec.get("description", ""),
-            "is_fallback": (chosen_model != desired_model),
+
+            "task_type":
+            task_type,
+
+            "desired_model":
+            desired_model,
+
+            "routed_model":
+            chosen_model,
+
+            "endpoint":
+            endpoint,
+
+            "description":
+            spec.get(
+                "description",
+                ""
+            ),
+
+            "is_fallback":
+            (
+                chosen_model !=
+                desired_model
+            )
+
         }
 
-        return chosen_model, endpoint, metadata
+        return (
+            chosen_model,
+            endpoint,
+            metadata
+        )

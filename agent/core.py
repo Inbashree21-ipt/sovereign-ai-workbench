@@ -16,6 +16,7 @@ import re
 import json
 import time
 import urllib.request
+
 from typing import Dict, Any, List, Optional, Callable, Tuple
 from dataclasses import dataclass, field
 
@@ -26,16 +27,27 @@ from agent.prompts import REACT_SYSTEM_PROMPT, SOVEREIGN_USER_PROMPT_TEMPLATE
 from agent.router import ModelRouter
 
 
+# ================================================================
+# AGENT STEP
+# ================================================================
+
 @dataclass
 class AgentStep:
+
     step_number: int
+
     thought: str
+
     action: Optional[str] = None
+
     action_input: Optional[Dict[str, Any]] = None
+
     observation: Optional[str] = None
+
     duration_sec: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
+
         return {
             "step_number": self.step_number,
             "thought": self.thought,
@@ -46,18 +58,31 @@ class AgentStep:
         }
 
 
+# ================================================================
+# AGENT EXECUTION RESULT
+# ================================================================
+
 @dataclass
 class AgentExecutionResult:
+
     task: str
+
     final_answer: str
+
     success: bool
+
     steps: List[AgentStep] = field(default_factory=list)
+
     total_duration_sec: float = 0.0
+
     model_used: str = ""
+
     task_type: str = ""
+
     deliverables: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
+
         return {
             "task": self.task,
             "final_answer": self.final_answer,
@@ -66,9 +91,16 @@ class AgentExecutionResult:
             "model_used": self.model_used,
             "task_type": self.task_type,
             "deliverables": self.deliverables,
-            "steps": [s.to_dict() for s in self.steps],
+            "steps": [
+                s.to_dict()
+                for s in self.steps
+            ],
         }
 
+
+# ================================================================
+# REACT AGENT
+# ================================================================
 
 class ReActAgent:
     """
@@ -81,13 +113,119 @@ class ReActAgent:
         router: Optional[ModelRouter] = None,
         base_url: str = OLLAMA_BASE_URL,
         max_steps: int = MAX_AGENT_STEPS,
-        step_callback: Optional[Callable[[AgentStep], None]] = None,
+        step_callback: Optional[
+            Callable[[AgentStep], None]
+        ] = None,
     ):
-        self.registry = registry or get_default_registry()
-        self.router = router or ModelRouter(base_url=base_url)
+
+        self.registry = (
+            registry
+            or get_default_registry()
+        )
+
+        self.router = (
+            router
+            or ModelRouter(
+                base_url=base_url
+            )
+        )
+
         self.base_url = base_url
+
         self.max_steps = max_steps
+
         self.step_callback = step_callback
+
+    # ============================================================
+    # DETECT KNOWLEDGE BASE QUESTION
+    # ============================================================
+
+    def _is_knowledge_question(
+        self,
+        user_prompt: str
+    ) -> bool:
+
+        prompt = (
+            user_prompt
+            .lower()
+            .strip()
+        )
+
+        knowledge_keywords = [
+
+            "finding",
+
+            "inspection",
+
+            "inspection report",
+
+            "pump",
+
+            "pipeline",
+
+            "maintenance",
+
+            "safety",
+
+            "sop",
+
+            "standard operating procedure",
+
+            "equipment",
+
+            "leakage",
+
+            "leak",
+
+            "wall thickness",
+
+            "pressure",
+
+            "vessel",
+
+            "hydro test",
+
+            "hydro-test",
+
+            "corrosion",
+
+            "plant",
+
+            "industrial",
+
+            "engineering",
+
+            "manual",
+
+            "company knowledge",
+
+            "company manual",
+
+            "internal report",
+
+            "internal document",
+
+            "procedure",
+
+            "compliance",
+
+            "shutdown",
+
+            "valve",
+
+            "flange",
+
+            "seal",
+
+            "inspection finding",
+
+            "maintenance report",
+        ]
+
+        return any(
+            keyword in prompt
+            for keyword in knowledge_keywords
+        )
 
     # ============================================================
     # OLLAMA
@@ -100,51 +238,96 @@ class ReActAgent:
         prompt: str
     ) -> str:
 
-        url = f"{endpoint}/api/generate"
+        url = (
+            f"{endpoint}/api/generate"
+        )
 
         payload = {
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            "think": False,
+
+            "model":
+                model,
+
+            "prompt":
+                prompt,
+
+            "stream":
+                False,
+
+            "think":
+                False,
+
             "options": {
-                "temperature": 0.1,
-                "top_p": 0.9,
-                "num_predict": 400,
+
+                "temperature":
+                    0.1,
+
+                "top_p":
+                    0.9,
+
+                "num_predict":
+                    400,
+
                 "stop": [
+
                     "Observation:",
+
                     "Observation :",
+
                     "\nObservation",
+
                     "Observation",
                 ],
             },
         }
 
         req = urllib.request.Request(
+
             url,
-            data=json.dumps(payload).encode("utf-8"),
+
+            data=json.dumps(
+                payload
+            ).encode("utf-8"),
+
             headers={
-                "Content-Type": "application/json"
+                "Content-Type":
+                    "application/json"
             },
         )
 
-        with urllib.request.urlopen(req, timeout=180) as resp:
+        with urllib.request.urlopen(
+            req,
+            timeout=180
+        ) as resp:
 
             data = json.loads(
-                resp.read().decode("utf-8")
+                resp.read().decode(
+                    "utf-8"
+                )
             )
 
-            response_text = data.get(
-                "response",
-                ""
-            ).strip()
-
-            if not response_text and data.get("thinking"):
-
-                response_text = data.get(
-                    "thinking",
+            response_text = (
+                data
+                .get(
+                    "response",
                     ""
-                ).strip()
+                )
+                .strip()
+            )
+
+            if (
+                not response_text
+                and
+                data.get("thinking")
+            ):
+
+                response_text = (
+                    data
+                    .get(
+                        "thinking",
+                        ""
+                    )
+                    .strip()
+                )
 
             return response_text
 
@@ -170,36 +353,49 @@ class ReActAgent:
         ).strip()
 
         if not clean_text:
+
             clean_text = text
 
         thought = ""
+
         action = None
+
         action_input = None
+
         final_answer = None
 
         # --------------------------------------------------------
-        # Final Answer
+        # FINAL ANSWER
         # --------------------------------------------------------
 
         fa_match = re.search(
             r"Final Answer\s*:\s*(.*)",
             clean_text,
-            re.DOTALL | re.IGNORECASE
+            re.DOTALL |
+            re.IGNORECASE
         )
 
         if fa_match:
 
-            final_answer = fa_match.group(1).strip()
+            final_answer = (
+                fa_match
+                .group(1)
+                .strip()
+            )
 
             t_match = re.search(
                 r"Thought\s*:\s*(.*?)(?=Final Answer\s*:|$)",
                 clean_text,
-                re.DOTALL | re.IGNORECASE
+                re.DOTALL |
+                re.IGNORECASE
             )
 
             thought = (
+
                 t_match.group(1).strip()
+
                 if t_match
+
                 else ""
             )
 
@@ -211,33 +407,42 @@ class ReActAgent:
             )
 
         # --------------------------------------------------------
-        # Thought
+        # THOUGHT
         # --------------------------------------------------------
 
         t_match = re.search(
             r"Thought\s*:\s*(.*?)(?=Action\s*:|$)",
             clean_text,
-            re.DOTALL | re.IGNORECASE
+            re.DOTALL |
+            re.IGNORECASE
         )
 
         if t_match:
 
-            thought = t_match.group(1).strip()
+            thought = (
+                t_match
+                .group(1)
+                .strip()
+            )
 
         else:
 
             if "Action:" in clean_text:
 
-                thought = clean_text.split(
-                    "Action:"
-                )[0].strip()
+                thought = (
+                    clean_text
+                    .split(
+                        "Action:"
+                    )[0]
+                    .strip()
+                )
 
             else:
 
                 thought = clean_text
 
         # --------------------------------------------------------
-        # Action
+        # ACTION
         # --------------------------------------------------------
 
         a_match = re.search(
@@ -248,39 +453,59 @@ class ReActAgent:
 
         if a_match:
 
-            action = a_match.group(1).strip()
+            action = (
+                a_match
+                .group(1)
+                .strip()
+            )
 
         else:
 
-            # Fallback detection
             known_tools = [
+
                 "read_file",
+
                 "search_company_knowledge",
+
                 "analyze_spreadsheet",
+
                 "execute_python_code",
+
                 "generate_deliverable",
+
                 "verify_airgap_sovereignty",
+
                 "list_files",
             ]
 
             for tool_name in known_tools:
 
                 if not re.search(
-                    r"\b" + tool_name + r"\b",
+                    r"\b"
+                    + tool_name
+                    + r"\b",
                     clean_text,
                     re.IGNORECASE
                 ):
+
                     continue
 
-                # File tools
+                # ------------------------------------------------
+                # FILE TOOLS
+                # ------------------------------------------------
+
                 if tool_name in [
+
                     "read_file",
+
                     "analyze_spreadsheet"
                 ]:
 
                     path_match = re.search(
+
                         r"['\"]([a-zA-Z0-9_\-/\\]+\."
                         r"(?:txt|csv|xlsx|md|docx))['\"]",
+
                         clean_text
                     )
 
@@ -289,24 +514,39 @@ class ReActAgent:
                         action = tool_name
 
                         action_input = {
-                            "file_path": path_match.group(1)
+
+                            "file_path":
+                                path_match.group(1)
                         }
 
                         break
 
+                # ------------------------------------------------
                 # RAG
-                elif tool_name == "search_company_knowledge":
+                # ------------------------------------------------
+
+                elif (
+                    tool_name
+                    ==
+                    "search_company_knowledge"
+                ):
 
                     q_match = re.search(
+
                         r"(?:query|search)[:\s]+"
                         r"['\"]([^'\"]+)['\"]",
+
                         clean_text,
+
                         re.IGNORECASE
                     )
 
                     query_text = (
+
                         q_match.group(1)
+
                         if q_match
+
                         else
                         "pipeline safety and minimum allowable wall thickness"
                     )
@@ -314,42 +554,70 @@ class ReActAgent:
                     action = tool_name
 
                     action_input = {
-                        "query": query_text,
-                        "top_k": 5
+
+                        "query":
+                            query_text,
+
+                        "top_k":
+                            5
                     }
 
                     break
 
-                # Airgap
-                elif tool_name == "verify_airgap_sovereignty":
+                # ------------------------------------------------
+                # AIRGAP
+                # ------------------------------------------------
+
+                elif (
+                    tool_name
+                    ==
+                    "verify_airgap_sovereignty"
+                ):
 
                     action = tool_name
+
                     action_input = {}
 
                     break
 
         # --------------------------------------------------------
-        # Action Input
+        # ACTION INPUT
         # --------------------------------------------------------
 
-        if action and not action_input:
+        if (
+            action
+            and
+            not action_input
+        ):
 
             ai_match = re.search(
+
                 r"Action Input\s*:\s*(.*)",
+
                 clean_text,
-                re.DOTALL | re.IGNORECASE
+
+                re.DOTALL |
+                re.IGNORECASE
             )
 
             if ai_match:
 
-                raw_input = ai_match.group(1).strip()
+                raw_input = (
+                    ai_match
+                    .group(1)
+                    .strip()
+                )
 
                 if "```" in raw_input:
 
                     cleaned = re.sub(
+
                         r"```(?:json)?(.*?)```",
+
                         r"\1",
+
                         raw_input,
+
                         flags=re.DOTALL
                     ).strip()
 
@@ -388,9 +656,13 @@ class ReActAgent:
                     action_input = {}
 
         return (
+
             thought,
+
             action,
+
             action_input,
+
             final_answer
         )
 
@@ -403,26 +675,45 @@ class ReActAgent:
         user_prompt: str
     ) -> bool:
 
-        prompt = user_prompt.lower()
+        prompt = (
+            user_prompt
+            .lower()
+            .strip()
+        )
 
         keywords = [
+
             "create",
+
             "generate",
+
             "write",
+
             "report",
+
             "word",
+
             "document",
+
             "approval note",
+
             "deliverable",
+
             "excel",
+
             "spreadsheet",
+
             "ppt",
+
             "powerpoint",
+
             "presentation",
         ]
 
         return any(
+
             keyword in prompt
+
             for keyword in keywords
         )
 
@@ -440,15 +731,22 @@ class ReActAgent:
         args = dict(tool_args)
 
         # --------------------------------------------------------
-        # Format
+        # FORMAT
         # --------------------------------------------------------
 
         doc_format = str(
-            args.get("format", "docx")
+
+            args.get(
+                "format",
+                "docx"
+            )
+
         ).lower()
 
         if doc_format not in [
+
             "docx",
+
             "xlsx"
         ]:
 
@@ -457,56 +755,80 @@ class ReActAgent:
         args["format"] = doc_format
 
         # --------------------------------------------------------
-        # Filename
+        # FILENAME
         # --------------------------------------------------------
 
         filename = str(
+
             args.get(
+
                 "filename",
+
                 "Sovereign_AI_Deliverable"
             )
+
         ).strip()
 
         filename = re.sub(
+
             r"\.(docx|xlsx)$",
+
             "",
+
             filename,
+
             flags=re.IGNORECASE
         )
 
         filename = re.sub(
+
             r'[<>:"/\\|?*]',
+
             "_",
+
             filename
         )
 
         if not filename:
 
-            filename = "Sovereign_AI_Deliverable"
+            filename = (
+                "Sovereign_AI_Deliverable"
+            )
 
         args["filename"] = (
-            filename + "." + doc_format
+
+            filename
+            +
+            "."
+            +
+            doc_format
         )
 
         # --------------------------------------------------------
-        # Title
+        # TITLE
         # --------------------------------------------------------
 
         title = str(
+
             args.get(
+
                 "title",
+
                 "Sovereign AI Workbench Deliverable"
             )
+
         ).strip()
 
         if not title:
 
-            title = "Sovereign AI Workbench Deliverable"
+            title = (
+                "Sovereign AI Workbench Deliverable"
+            )
 
         args["title"] = title
 
         # --------------------------------------------------------
-        # Word sections
+        # WORD SECTIONS
         # --------------------------------------------------------
 
         if doc_format == "docx":
@@ -524,89 +846,121 @@ class ReActAgent:
             ):
 
                 for index, section in enumerate(
+
                     sections,
+
                     start=1
                 ):
 
-                    # Correct format
                     if isinstance(
                         section,
                         dict
                     ):
 
                         heading = str(
+
                             section.get(
+
                                 "heading",
+
                                 f"Section {index}"
                             )
                         )
 
                         body = str(
+
                             section.get(
+
                                 "body",
+
                                 ""
                             )
                         )
 
-                        normalized_sections.append(
-                            {
-                                "heading": heading,
-                                "body": body
-                            }
-                        )
+                        normalized_sections.append({
 
-                    # Model sends plain string
+                            "heading":
+                                heading,
+
+                            "body":
+                                body
+                        })
+
                     elif isinstance(
                         section,
                         str
                     ):
 
-                        normalized_sections.append(
-                            {
-                                "heading": f"Section {index}",
-                                "body": section
-                            }
-                        )
+                        normalized_sections.append({
+
+                            "heading":
+                                f"Section {index}",
+
+                            "body":
+                                section
+                        })
 
             # ----------------------------------------------------
-            # Detect useless / outline-only sections
+            # DETECT EMPTY / USELESS SECTIONS
             # ----------------------------------------------------
 
             outline_only = (
+
                 normalized_sections
-                and all(
+
+                and
+
+                all(
+
                     section.get(
                         "heading",
                         ""
                     )
                     .strip()
                     .lower()
-                    .startswith("section ")
+                    .startswith(
+                        "section "
+                    )
+
                     and
+
                     section.get(
                         "body",
                         ""
                     ).strip()
-                    for section in normalized_sections
+
+                    for section
+                    in normalized_sections
                 )
             )
 
             if (
+
                 not normalized_sections
+
                 or
+
                 all(
+
                     not section.get(
                         "body",
                         ""
                     ).strip()
-                    for section in normalized_sections
+
+                    for section
+                    in normalized_sections
                 )
+
                 or
+
                 outline_only
             ):
 
                 rag_observation = str(
-                    previous_observation or ""
+
+                    previous_observation
+                    or
+                    ""
                 ).strip()
 
                 if rag_observation:
@@ -614,6 +968,7 @@ class ReActAgent:
                     normalized_sections = [
 
                         {
+
                             "heading":
                                 "Pipeline Safety Findings",
 
@@ -622,29 +977,33 @@ class ReActAgent:
                         },
 
                         {
+
                             "heading":
                                 "Requested Task",
 
                             "body":
                                 user_prompt
                         }
-
                     ]
 
                 else:
 
                     normalized_sections = []
 
-            args["sections"] = normalized_sections
+            args["sections"] = (
+                normalized_sections
+            )
 
         # --------------------------------------------------------
-        # Excel table data
+        # EXCEL TABLE DATA
         # --------------------------------------------------------
 
         if doc_format == "xlsx":
 
             table_data = args.get(
+
                 "table_data",
+
                 []
             )
 
@@ -675,42 +1034,60 @@ class ReActAgent:
 
         deliverables: List[str] = []
 
-        # --------------------------------------------------------
-        # Route to local model
-        # --------------------------------------------------------
+        # ========================================================
+        # ROUTE TO LOCAL MODEL
+        # ========================================================
 
-        model_name, endpoint, route_meta = (
-            self.router.route(
-                user_prompt,
-                task_type=task_type
+        if task_type is None:
+
+            model_name, endpoint, route_meta = (
+                self.router.route(
+                    user_prompt
+                )
             )
+
+        else:
+
+            model_name, endpoint, route_meta = (
+                self.router.route(
+                    user_prompt,
+                    task_type=task_type
+                )
+            )
+
+        actual_task_type = (
+            route_meta[
+                "task_type"
+            ]
         )
 
-        actual_task_type = route_meta[
-            "task_type"
-        ]
-
-        # --------------------------------------------------------
-        # Prepare system prompt
-        # --------------------------------------------------------
+        # ========================================================
+        # PREPARE SYSTEM PROMPT
+        # ========================================================
 
         tool_descriptions = (
-            self.registry.format_react_prompt()
+            self.registry
+            .format_react_prompt()
         )
 
         system_content = (
             REACT_SYSTEM_PROMPT.format(
-                tool_descriptions=tool_descriptions
+
+                tool_descriptions=
+                    tool_descriptions
             )
         )
 
         user_content = (
             SOVEREIGN_USER_PROMPT_TEMPLATE.format(
-                user_prompt=user_prompt
+
+                user_prompt=
+                    user_prompt
             )
         )
 
         running_history = (
+
             f"{system_content}\n\n"
             f"{user_content}"
         )
@@ -725,32 +1102,190 @@ class ReActAgent:
             )
         )
 
-        # --------------------------------------------------------
-        # ReAct Loop
-        # --------------------------------------------------------
+        # ========================================================
+        # DETERMINISTIC KNOWLEDGE ROUTING
+        # ========================================================
+        #
+        # IMPORTANT:
+        #
+        # Small local LLMs can sometimes incorrectly select
+        # list_files for questions about company knowledge.
+        #
+        # Therefore, clear industrial/company knowledge questions
+        # are routed directly to the RAG tool.
+        #
+        # Example:
+        #
+        # "What was the finding for Pump P-102?"
+        #
+        # -> search_company_knowledge
+        #
+        # No list_files.
+        # No Python.
+        # No unnecessary deliverable.
+        #
+        # ========================================================
+
+        if (
+            self._is_knowledge_question(
+                user_prompt
+            )
+            and
+            not deliverable_requested
+        ):
+
+            step_start = time.time()
+
+            rag_query = (
+                user_prompt.strip()
+            )
+
+            rag_args = {
+
+                "query":
+                    rag_query,
+
+                "top_k":
+                    5
+            }
+
+            tool_res: ToolResult = (
+                self.registry
+                .execute_tool(
+
+                    "search_company_knowledge",
+
+                    **rag_args
+                )
+            )
+
+            observation = (
+
+                tool_res.output
+
+                if tool_res.success
+
+                else
+                f"Error: {tool_res.error}"
+            )
+
+            previous_observation = (
+                observation
+            )
+
+            step = AgentStep(
+
+                step_number=1,
+
+                thought=(
+                    "This is an industrial/company "
+                    "knowledge question. Searching "
+                    "the confidential knowledge base first."
+                ),
+
+                action=(
+                    "search_company_knowledge"
+                ),
+
+                action_input=
+                    rag_args,
+
+                observation=
+                    observation,
+
+                duration_sec=(
+                    time.time()
+                    -
+                    step_start
+                ),
+            )
+
+            steps.append(step)
+
+            if self.step_callback:
+
+                self.step_callback(
+                    step
+                )
+
+            if tool_res.success:
+
+                final_answer = observation
+
+            else:
+
+                final_answer = (
+                    f"Unable to search company knowledge: "
+                    f"{tool_res.error}"
+                )
+
+            total_duration = (
+                time.time()
+                -
+                start_time
+            )
+
+            return AgentExecutionResult(
+
+                task=
+                    user_prompt,
+
+                final_answer=
+                    final_answer,
+
+                success=
+                    tool_res.success,
+
+                steps=
+                    steps,
+
+                total_duration_sec=
+                    total_duration,
+
+                model_used=
+                    model_name,
+
+                task_type=
+                    actual_task_type,
+
+                deliverables=
+                    deliverables,
+            )
+
+        # ========================================================
+        # REACT LOOP
+        # ========================================================
 
         for step_idx in range(
+
             1,
+
             self.max_steps + 1
         ):
 
             step_start = time.time()
 
             # ----------------------------------------------------
-            # Model inference
+            # MODEL INFERENCE
             # ----------------------------------------------------
 
             try:
 
-                response = self._call_ollama(
-                    model=model_name,
-                    endpoint=endpoint,
-                    prompt=running_history
+                response = (
+                    self._call_ollama(
+
+                        model=model_name,
+
+                        endpoint=endpoint,
+
+                        prompt=running_history
+                    )
                 )
 
             except Exception as e:
 
                 err_msg = (
+
                     f"[OLLAMA INFERENCE ERROR] "
                     f"Could not reach model "
                     f"'{model_name}' at {endpoint}: "
@@ -758,14 +1293,20 @@ class ReActAgent:
                 )
 
                 step = AgentStep(
-                    step_number=step_idx,
-                    thought=(
-                        "Error connecting to "
-                        "local model."
-                    ),
-                    observation=err_msg,
+
+                    step_number=
+                        step_idx,
+
+                    thought=
+                        "Error connecting to local model.",
+
+                    observation=
+                        err_msg,
+
                     duration_sec=(
-                        time.time() -
+
+                        time.time()
+                        -
                         step_start
                     ),
                 )
@@ -773,34 +1314,55 @@ class ReActAgent:
                 steps.append(step)
 
                 return AgentExecutionResult(
-                    task=user_prompt,
-                    final_answer=err_msg,
-                    success=False,
-                    steps=steps,
+
+                    task=
+                        user_prompt,
+
+                    final_answer=
+                        err_msg,
+
+                    success=
+                        False,
+
+                    steps=
+                        steps,
+
                     total_duration_sec=(
-                        time.time() -
+
+                        time.time()
+                        -
                         start_time
                     ),
-                    model_used=model_name,
-                    task_type=actual_task_type,
-                    deliverables=deliverables,
+
+                    model_used=
+                        model_name,
+
+                    task_type=
+                        actual_task_type,
+
+                    deliverables=
+                        deliverables,
                 )
 
             # ----------------------------------------------------
-            # Parse response
+            # PARSE RESPONSE
             # ----------------------------------------------------
 
             (
                 thought,
+
                 action,
+
                 action_input,
+
                 fa
+
             ) = self._parse_react_output(
                 response
             )
 
             # ----------------------------------------------------
-            # Final Answer
+            # FINAL ANSWER
             # ----------------------------------------------------
 
             if fa:
@@ -808,13 +1370,21 @@ class ReActAgent:
                 final_answer = fa
 
                 step = AgentStep(
-                    step_number=step_idx,
+
+                    step_number=
+                        step_idx,
+
                     thought=(
-                        thought or
+
+                        thought
+                        or
                         "Goal completed."
                     ),
+
                     duration_sec=(
-                        time.time() -
+
+                        time.time()
+                        -
                         step_start
                     ),
                 )
@@ -823,12 +1393,14 @@ class ReActAgent:
 
                 if self.step_callback:
 
-                    self.step_callback(step)
+                    self.step_callback(
+                        step
+                    )
 
                 break
 
             # ----------------------------------------------------
-            # No action
+            # NO ACTION
             # ----------------------------------------------------
 
             if not action:
@@ -836,13 +1408,21 @@ class ReActAgent:
                 final_answer = response
 
                 step = AgentStep(
-                    step_number=step_idx,
+
+                    step_number=
+                        step_idx,
+
                     thought=(
-                        thought or
+
+                        thought
+                        or
                         "Produced direct response."
                     ),
+
                     duration_sec=(
-                        time.time() -
+
+                        time.time()
+                        -
                         step_start
                     ),
                 )
@@ -851,72 +1431,97 @@ class ReActAgent:
 
                 if self.step_callback:
 
-                    self.step_callback(step)
+                    self.step_callback(
+                        step
+                    )
 
                 break
 
             # ----------------------------------------------------
-            # Prepare arguments
+            # PREPARE TOOL ARGUMENTS
             # ----------------------------------------------------
 
             tool_args = (
+
                 action_input
+
                 if isinstance(
                     action_input,
                     dict
                 )
+
                 else {}
             )
 
             # ----------------------------------------------------
-            # IMPORTANT:
-            # Normalize deliverable arguments
+            # NORMALIZE DELIVERABLE ARGUMENTS
             # ----------------------------------------------------
 
-            if action == "generate_deliverable":
+            if (
+                action
+                ==
+                "generate_deliverable"
+            ):
 
                 tool_args = (
                     self._prepare_deliverable_args(
+
                         tool_args,
+
                         previous_observation,
+
                         user_prompt
                     )
                 )
 
             # ----------------------------------------------------
-            # Execute tool
+            # EXECUTE TOOL
             # ----------------------------------------------------
 
             tool_res: ToolResult = (
-                self.registry.execute_tool(
+                self.registry
+                .execute_tool(
+
                     action,
+
                     **tool_args
                 )
             )
 
             observation = (
+
                 tool_res.output
+
                 if tool_res.success
+
                 else
                 f"Error: {tool_res.error}"
             )
 
-            previous_observation = observation
+            previous_observation = (
+                observation
+            )
 
             # ----------------------------------------------------
-            # Track deliverables
+            # TRACK DELIVERABLES
             # ----------------------------------------------------
 
             if (
-                action ==
+
+                action
+                ==
                 "generate_deliverable"
+
                 and
+
                 tool_res.success
             ):
 
-                filename = tool_args.get(
-                    "filename",
-                    ""
+                filename = (
+                    tool_args.get(
+                        "filename",
+                        ""
+                    )
                 )
 
                 if filename:
@@ -926,37 +1531,58 @@ class ReActAgent:
                     )
 
             # ----------------------------------------------------
-            # Create step record
+            # CREATE STEP RECORD
             # ----------------------------------------------------
 
             step_duration = (
-                time.time() -
+
+                time.time()
+                -
                 step_start
             )
 
             step = AgentStep(
-                step_number=step_idx,
-                thought=thought,
-                action=action,
-                action_input=tool_args,
-                observation=observation,
-                duration_sec=step_duration,
+
+                step_number=
+                    step_idx,
+
+                thought=
+                    thought,
+
+                action=
+                    action,
+
+                action_input=
+                    tool_args,
+
+                observation=
+                    observation,
+
+                duration_sec=
+                    step_duration,
             )
 
             steps.append(step)
 
             if self.step_callback:
 
-                self.step_callback(step)
+                self.step_callback(
+                    step
+                )
 
             # ====================================================
             # STOP CONDITION 1
-            # Successful file read
+            # SUCCESSFUL FILE READ
             # ====================================================
 
             if (
-                action == "read_file"
+
+                action
+                ==
+                "read_file"
+
                 and
+
                 tool_res.success
             ):
 
@@ -966,13 +1592,17 @@ class ReActAgent:
 
             # ====================================================
             # STOP CONDITION 2
-            # Successful spreadsheet analysis
+            # SUCCESSFUL SPREADSHEET ANALYSIS
             # ====================================================
 
             if (
-                action ==
+
+                action
+                ==
                 "analyze_spreadsheet"
+
                 and
+
                 tool_res.success
             ):
 
@@ -982,12 +1612,17 @@ class ReActAgent:
 
             # ====================================================
             # STOP CONDITION 3
-            # Successful file listing
+            # SUCCESSFUL FILE LISTING
             # ====================================================
 
             if (
-                action == "list_files"
+
+                action
+                ==
+                "list_files"
+
                 and
+
                 tool_res.success
             ):
 
@@ -997,20 +1632,17 @@ class ReActAgent:
 
             # ====================================================
             # STOP CONDITION 4
-            # RAG search
-            #
-            # Normal knowledge question:
-            #   stop after successful RAG.
-            #
-            # Deliverable request:
-            #   force the next action to be
-            #   generate_deliverable.
+            # RAG SEARCH
             # ====================================================
 
             if (
-                action ==
+
+                action
+                ==
                 "search_company_knowledge"
+
                 and
+
                 tool_res.success
             ):
 
@@ -1021,67 +1653,83 @@ class ReActAgent:
                     break
 
                 # ------------------------------------------------
-                # IMPORTANT SYSTEM INSTRUCTION
-                # ------------------------------------------------
-                #
-                # RAG has already returned the required knowledge.
-                # Do not allow the small model to select unrelated
-                # tools after this point.
-                #
-                # The next action must be generate_deliverable.
+                # FORCE DELIVERABLE AFTER RAG
                 # ------------------------------------------------
 
                 running_history += (
+
                     "\nIMPORTANT SYSTEM INSTRUCTION:\n"
+
                     "The company knowledge search completed "
                     "successfully.\n"
+
                     "The retrieved knowledge is the source "
                     "material for the requested deliverable.\n\n"
+
                     "NEXT ACTION MUST BE:\n"
+
                     "generate_deliverable\n\n"
+
                     "DO NOT call:\n"
+
                     "- analyze_spreadsheet\n"
+
                     "- execute_python_code\n"
+
                     "- search_company_knowledge again\n"
+
                     "- read_file unless explicitly required\n\n"
+
                     "Create the requested Word/Excel deliverable "
                     "directly using generate_deliverable.\n"
+
                     "Use the retrieved Observation as the document "
                     "content when appropriate.\n"
+
                     "Do not invent missing spreadsheet files, "
                     "Python functions, calculations, or sources.\n"
+
                     "After generate_deliverable succeeds, provide "
                     "the Final Answer.\n"
                 )
 
             # ====================================================
             # STOP CONDITION 5
-            # Successful deliverable generation
+            # SUCCESSFUL DELIVERABLE
             # ====================================================
 
             if (
-                action ==
+
+                action
+                ==
                 "generate_deliverable"
+
                 and
+
                 tool_res.success
             ):
 
-                filename = tool_args.get(
-                    "filename",
-                    "deliverable"
+                filename = (
+                    tool_args.get(
+                        "filename",
+                        "deliverable"
+                    )
                 )
 
                 final_answer = (
+
                     f"Successfully completed the task.\n\n"
+
                     f"Deliverable created: "
                     f"{filename}\n\n"
+
                     f"{observation}"
                 )
 
                 break
 
             # ====================================================
-            # Append observation for next ReAct step
+            # APPEND OBSERVATION
             # ====================================================
 
             obs_compact = observation
@@ -1089,39 +1737,53 @@ class ReActAgent:
             if len(obs_compact) > 1200:
 
                 obs_compact = (
+
                     obs_compact[:1200]
+
                     +
+
                     "\n... "
                     "[truncated for context efficiency]"
                 )
 
             running_history += (
+
                 f"\nThought: {thought}\n"
+
                 f"Action: {action}\n"
+
                 f"Action Input: "
                 f"{json.dumps(tool_args)}\n"
+
                 f"Observation: {obs_compact}\n"
             )
 
-        # --------------------------------------------------------
-        # Fallback if max steps reached
-        # --------------------------------------------------------
+        # ========================================================
+        # FALLBACK IF MAX STEPS REACHED
+        # ========================================================
 
         if not final_answer:
 
             last_obs = (
+
                 steps[-1].observation
+
                 if steps
-                else "No observation available"
+
+                else
+                "No observation available"
             )
 
             if deliverables:
 
                 final_answer = (
+
                     f"Task completed after "
                     f"{len(steps)} steps.\n\n"
+
                     f"Deliverables created: "
                     f"{', '.join(deliverables)}\n\n"
+
                     f"Last observation:\n"
                     f"{last_obs}"
                 )
@@ -1129,28 +1791,48 @@ class ReActAgent:
             else:
 
                 final_answer = (
+
                     f"Task completed after "
                     f"{len(steps)} steps.\n"
+
                     f"Last tool observation:\n"
                     f"{last_obs}"
                 )
 
-        # --------------------------------------------------------
-        # Final result
-        # --------------------------------------------------------
+        # ========================================================
+        # FINAL RESULT
+        # ========================================================
 
         total_duration = (
-            time.time() -
+
+            time.time()
+            -
             start_time
         )
 
         return AgentExecutionResult(
-            task=user_prompt,
-            final_answer=final_answer,
-            success=True,
-            steps=steps,
-            total_duration_sec=total_duration,
-            model_used=model_name,
-            task_type=actual_task_type,
-            deliverables=deliverables,
+
+            task=
+                user_prompt,
+
+            final_answer=
+                final_answer,
+
+            success=
+                True,
+
+            steps=
+                steps,
+
+            total_duration_sec=
+                total_duration,
+
+            model_used=
+                model_name,
+
+            task_type=
+                actual_task_type,
+
+            deliverables=
+                deliverables,
         )

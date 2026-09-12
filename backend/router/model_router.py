@@ -7,7 +7,6 @@ MODEL_MAP = {
 
 CODING_KEYWORDS = [
     "code",
-    "python",
     "java",
     "program",
     "debug",

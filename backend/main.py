@@ -19,29 +19,43 @@ sys.path.append(
     )
 )
 
-
 # --------------------------------------------------
 # Imports
 # --------------------------------------------------
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import (
+    FastAPI,
+    UploadFile,
+    File,
+    HTTPException
+)
+
 from fastapi.middleware.cors import CORSMiddleware
+
 from fastapi.responses import FileResponse
+
 from pydantic import BaseModel
+
 from ollama import chat
 
 import faiss
 
 from ai.ollama_client import ask_model
+
 from router.model_router import choose_model
+
 from agent.core import ReActAgent
+
+from agent.router import ModelRouter
 
 # Member 5 - OCR
 from pdf_ocr import extract_pdf_text
 
 # Member 3 - RAG
 from rag.rag_pipeline import RAGPipeline
+
 from rag.retrieve import retrieve_top_k
+
 from rag.ingest import ingest_documents
 
 
@@ -79,7 +93,9 @@ DELIVERABLES_DIR = (
 )
 
 
-# Make sure important folders exist
+# --------------------------------------------------
+# Create Required Folders
+# --------------------------------------------------
 
 RAG_DATA_DIR.mkdir(
     parents=True,
@@ -98,12 +114,16 @@ DELIVERABLES_DIR.mkdir(
 
 app.add_middleware(
     CORSMiddleware,
+
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173"
     ],
+
     allow_credentials=True,
+
     allow_methods=["*"],
+
     allow_headers=["*"],
 )
 
@@ -120,6 +140,8 @@ class AskRequest(BaseModel):
 class RAGRequest(BaseModel):
 
     question: str
+
+    top_k: int = 3
 
 
 # --------------------------------------------------
@@ -168,9 +190,98 @@ def get_faiss_chunk_count():
         return 0
 
 
-# --------------------------------------------------
-# Home
-# --------------------------------------------------
+# ==================================================
+# HELPER - DETECT COMPANY / INDUSTRIAL KNOWLEDGE
+# ==================================================
+
+def is_knowledge_question(
+    prompt: str
+) -> bool:
+
+    prompt = (
+        prompt
+        .lower()
+        .strip()
+    )
+
+    knowledge_keywords = [
+
+        "finding",
+
+        "inspection",
+
+        "inspection report",
+
+        "pump",
+
+        "pipeline",
+
+        "maintenance",
+
+        "safety",
+
+        "sop",
+
+        "standard operating procedure",
+
+        "equipment",
+
+        "leakage",
+
+        "leak",
+
+        "wall thickness",
+
+        "pressure",
+
+        "vessel",
+
+        "hydro test",
+
+        "hydro-test",
+
+        "corrosion",
+
+        "industrial",
+
+        "engineering",
+
+        "manual",
+
+        "company knowledge",
+
+        "company manual",
+
+        "internal report",
+
+        "internal document",
+
+        "procedure",
+
+        "compliance",
+
+        "shutdown",
+
+        "valve",
+
+        "flange",
+
+        "seal",
+
+        "inspection finding",
+
+        "maintenance report",
+    ]
+
+    return any(
+        keyword in prompt
+        for keyword in knowledge_keywords
+    )
+
+
+# ==================================================
+# HOME
+# ==================================================
 
 @app.get("/")
 def home():
@@ -232,10 +343,96 @@ def agent_request(
     request: AskRequest
 ):
 
-    agent = ReActAgent()
+    # --------------------------------------------------
+    # DIRECT RAG PATH
+    # --------------------------------------------------
+    #
+    # If the user asks about company / industrial
+    # knowledge, directly use the RAG pipeline.
+    #
+    # This prevents the small local LLM from incorrectly
+    # choosing list_files or execute_python_code.
+    #
+    # Example:
+    #
+    # What was the finding for Pump P-102?
+    #
+    # -> RAG
+    #
+    # --------------------------------------------------
+
+    if is_knowledge_question(
+        request.prompt
+    ):
+
+        try:
+
+            result = rag_pipeline.query(
+                request.prompt
+            )
+
+            answer = result.get(
+                "answer",
+                ""
+            )
+
+            sources = result.get(
+                "sources",
+                []
+            )
+
+            if answer and answer.strip():
+
+                return {
+
+                    "response":
+                    answer,
+
+                    "success":
+                    True,
+
+                    "model":
+                    "llama3.2:3b",
+
+                    "task":
+                    "general",
+
+                    "steps":
+                    1,
+
+                    "deliverables":
+                    [],
+
+                    "sources":
+                    sources
+
+                }
+
+        except Exception as error:
+
+            print(
+                f"[AGENT RAG WARNING] {error}"
+            )
+
+    # --------------------------------------------------
+    # NORMAL MEMBER 4 AGENT
+    # --------------------------------------------------
+
+    router = ModelRouter()
+
+    detected_task = (
+        router.classify_task_fast(
+            request.prompt
+        )
+    )
+
+    agent = ReActAgent(
+        router=router
+    )
 
     result = agent.run(
-        request.prompt
+        request.prompt,
+        task_type=detected_task
     )
 
     return {
@@ -327,18 +524,6 @@ async def analyze_image(
 # ==================================================
 # MEMBER 5 - OCR
 # ==================================================
-
-
-# --------------------------------------------------
-# OCR - Extract Text From PDF
-# --------------------------------------------------
-#
-# Accepts a PDF uploaded by the frontend.
-#
-# The PDF is temporarily saved.
-# Member 5 OCR function processes it.
-# The temporary file is then deleted.
-# --------------------------------------------------
 
 @app.post("/ocr/extract")
 async def extract_ocr_text(
@@ -474,7 +659,6 @@ async def extract_ocr_text(
 # MEMBER 3 - RAG
 # ==================================================
 
-
 # --------------------------------------------------
 # RAG Query
 # --------------------------------------------------
@@ -508,19 +692,23 @@ def rag_query(
 # --------------------------------------------------
 # RAG Search
 # --------------------------------------------------
-#
-# Used by Knowledge Base frontend.
-# Returns actual FAISS retrieved chunks.
-# --------------------------------------------------
 
 @app.post("/rag/search")
 def rag_search(
     request: RAGRequest
 ):
 
+    top_k = max(
+        1,
+        min(
+            request.top_k,
+            20
+        )
+    )
+
     results = retrieve_top_k(
         request.question,
-        k=3
+        k=top_k
     )
 
     return {
@@ -540,10 +728,6 @@ async def upload_rag_document(
     file: UploadFile = File(...)
 ):
 
-    # ----------------------------------------------
-    # Validate filename
-    # ----------------------------------------------
-
     if not file.filename:
 
         raise HTTPException(
@@ -555,20 +739,12 @@ async def upload_rag_document(
         file.filename
     ).name
 
-    # ----------------------------------------------
-    # Validate PDF
-    # ----------------------------------------------
-
     if not filename.lower().endswith(".pdf"):
 
         raise HTTPException(
             status_code=400,
             detail="Only PDF files are supported."
         )
-
-    # ----------------------------------------------
-    # Prevent duplicate filename
-    # ----------------------------------------------
 
     destination = (
         RAG_DATA_DIR /
@@ -584,10 +760,6 @@ async def upload_rag_document(
                 "already exists."
             )
         )
-
-    # ----------------------------------------------
-    # Save PDF
-    # ----------------------------------------------
 
     try:
 
@@ -624,10 +796,6 @@ async def upload_rag_document(
             )
         )
 
-    # ----------------------------------------------
-    # Run Member 3 ingestion
-    # ----------------------------------------------
-
     try:
 
         ingestion_result = (
@@ -653,8 +821,6 @@ async def upload_rag_document(
                 )
             )
 
-        # Reload RAG pipeline
-
         reload_rag_pipeline()
 
     except HTTPException:
@@ -670,10 +836,6 @@ async def upload_rag_document(
                 f"{error}"
             )
         )
-
-    # ----------------------------------------------
-    # Return result
-    # ----------------------------------------------
 
     return {
 
@@ -791,10 +953,6 @@ def delete_rag_document(
     filename: str
 ):
 
-    # ----------------------------------------------
-    # Security - only allow filename
-    # ----------------------------------------------
-
     safe_filename = Path(
         filename
     ).name
@@ -805,10 +963,6 @@ def delete_rag_document(
             status_code=400,
             detail="Invalid filename."
         )
-
-    # ----------------------------------------------
-    # Only PDF files
-    # ----------------------------------------------
 
     if not safe_filename.lower().endswith(
         ".pdf"
@@ -824,20 +978,12 @@ def delete_rag_document(
         safe_filename
     )
 
-    # ----------------------------------------------
-    # Check file exists
-    # ----------------------------------------------
-
     if not file_path.exists():
 
         raise HTTPException(
             status_code=404,
             detail="Document not found."
         )
-
-    # ----------------------------------------------
-    # Prevent deleting last PDF
-    # ----------------------------------------------
 
     pdf_files = list(
         RAG_DATA_DIR.glob("*.pdf")
@@ -853,10 +999,6 @@ def delete_rag_document(
             )
         )
 
-    # ----------------------------------------------
-    # Delete document
-    # ----------------------------------------------
-
     try:
 
         file_path.unlink()
@@ -870,10 +1012,6 @@ def delete_rag_document(
                 f"{error}"
             )
         )
-
-    # ----------------------------------------------
-    # Rebuild FAISS index
-    # ----------------------------------------------
 
     try:
 
@@ -965,11 +1103,6 @@ def rag_status():
 # GENERATED DELIVERABLES
 # ==================================================
 
-
-# --------------------------------------------------
-# List Generated Deliverables
-# --------------------------------------------------
-
 @app.get("/deliverables")
 def get_deliverables():
 
@@ -1045,11 +1178,6 @@ def download_deliverable(
 # ==================================================
 # INSTALLED LOCAL MODELS
 # ==================================================
-
-
-# --------------------------------------------------
-# Installed Local Models
-# --------------------------------------------------
 
 @app.get("/models")
 def get_models():
