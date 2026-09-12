@@ -1,6 +1,7 @@
 import sys
 import os
 from pathlib import Path
+import tempfile
 
 # --------------------------------------------------
 # Python Paths
@@ -35,6 +36,9 @@ from ai.ollama_client import ask_model
 from router.model_router import choose_model
 from agent.core import ReActAgent
 
+# Member 5 - OCR
+from pdf_ocr import extract_pdf_text
+
 # Member 3 - RAG
 from rag.rag_pipeline import RAGPipeline
 from rag.retrieve import retrieve_top_k
@@ -52,9 +56,9 @@ app = FastAPI()
 # Project Paths
 # --------------------------------------------------
 
-PROJECT_ROOT = Path(
-    __file__
-).resolve().parent.parent
+PROJECT_ROOT = (
+    Path(__file__).resolve().parent.parent
+)
 
 RAG_DATA_DIR = (
     PROJECT_ROOT /
@@ -76,6 +80,7 @@ DELIVERABLES_DIR = (
 
 
 # Make sure important folders exist
+
 RAG_DATA_DIR.mkdir(
     parents=True,
     exist_ok=True
@@ -108,10 +113,12 @@ app.add_middleware(
 # --------------------------------------------------
 
 class AskRequest(BaseModel):
+
     prompt: str
 
 
 class RAGRequest(BaseModel):
+
     question: str
 
 
@@ -145,6 +152,7 @@ def get_faiss_chunk_count():
     )
 
     if not index_path.exists():
+
         return 0
 
     try:
@@ -168,14 +176,16 @@ def get_faiss_chunk_count():
 def home():
 
     return {
+
         "message":
         "Sovereign AI Workbench Backend is running!"
+
     }
 
 
-# --------------------------------------------------
-# Normal AI Request
-# --------------------------------------------------
+# ==================================================
+# MEMBER 1 - NORMAL AI REQUEST
+# ==================================================
 
 @app.post("/ask")
 def ask_ai(
@@ -213,9 +223,9 @@ def ask_ai(
     }
 
 
-# --------------------------------------------------
-# Agent Request
-# --------------------------------------------------
+# ==================================================
+# MEMBER 4 - AGENT
+# ==================================================
 
 @app.post("/agent")
 def agent_request(
@@ -251,9 +261,9 @@ def agent_request(
     }
 
 
-# --------------------------------------------------
-# Vision Request
-# --------------------------------------------------
+# ==================================================
+# MEMBER 4 / 5 - VISION
+# ==================================================
 
 @app.post("/vision")
 async def analyze_image(
@@ -315,6 +325,152 @@ async def analyze_image(
 
 
 # ==================================================
+# MEMBER 5 - OCR
+# ==================================================
+
+
+# --------------------------------------------------
+# OCR - Extract Text From PDF
+# --------------------------------------------------
+#
+# Accepts a PDF uploaded by the frontend.
+#
+# The PDF is temporarily saved.
+# Member 5 OCR function processes it.
+# The temporary file is then deleted.
+# --------------------------------------------------
+
+@app.post("/ocr/extract")
+async def extract_ocr_text(
+    file: UploadFile = File(...)
+):
+
+    # ----------------------------------------------
+    # Validate filename
+    # ----------------------------------------------
+
+    if not file.filename:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Filename is required."
+        )
+
+    filename = Path(
+        file.filename
+    ).name
+
+    # ----------------------------------------------
+    # Validate PDF
+    # ----------------------------------------------
+
+    if not filename.lower().endswith(".pdf"):
+
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF files are supported."
+        )
+
+    temporary_path = None
+
+    try:
+
+        # ------------------------------------------
+        # Create temporary PDF
+        # ------------------------------------------
+
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=".pdf"
+        ) as temporary_file:
+
+            temporary_path = (
+                temporary_file.name
+            )
+
+            while True:
+
+                chunk = await file.read(
+                    1024 * 1024
+                )
+
+                if not chunk:
+
+                    break
+
+                temporary_file.write(
+                    chunk
+                )
+
+        # ------------------------------------------
+        # Run Member 5 OCR
+        # ------------------------------------------
+
+        extracted_text = (
+            extract_pdf_text(
+                temporary_path
+            )
+        )
+
+        # ------------------------------------------
+        # Return OCR result
+        # ------------------------------------------
+
+        return {
+
+            "success":
+            True,
+
+            "filename":
+            filename,
+
+            "type":
+            "PDF",
+
+            "method":
+            "PDF Text Extraction + Tesseract OCR",
+
+            "text":
+            extracted_text
+
+        }
+
+    except Exception as error:
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"OCR processing failed: "
+                f"{error}"
+            )
+        )
+
+    finally:
+
+        # ------------------------------------------
+        # Delete temporary file
+        # ------------------------------------------
+
+        if (
+            temporary_path
+            and
+            os.path.exists(
+                temporary_path
+            )
+        ):
+
+            try:
+
+                os.remove(
+                    temporary_path
+                )
+
+            except Exception:
+
+                pass
+
+
+# ==================================================
 # MEMBER 3 - RAG
 # ==================================================
 
@@ -352,8 +508,10 @@ def rag_query(
 # --------------------------------------------------
 # RAG Search
 # --------------------------------------------------
+#
 # Used by Knowledge Base frontend.
 # Returns actual FAISS retrieved chunks.
+# --------------------------------------------------
 
 @app.post("/rag/search")
 def rag_search(
@@ -445,13 +603,17 @@ async def upload_rag_document(
                 )
 
                 if not chunk:
+
                     break
 
-                buffer.write(chunk)
+                buffer.write(
+                    chunk
+                )
 
     except Exception as error:
 
         if destination.exists():
+
             destination.unlink()
 
         raise HTTPException(
@@ -477,8 +639,8 @@ async def upload_rag_document(
             False
         ):
 
-            # Remove failed upload
             if destination.exists():
+
                 destination.unlink()
 
             raise HTTPException(
@@ -491,11 +653,12 @@ async def upload_rag_document(
                 )
             )
 
-        # Reload RAG pipeline so it uses
-        # the newly created FAISS index
+        # Reload RAG pipeline
+
         reload_rag_pipeline()
 
     except HTTPException:
+
         raise
 
     except Exception as error:
@@ -561,20 +724,6 @@ def get_rag_documents():
     total_chunks = (
         get_faiss_chunk_count()
     )
-
-    # ----------------------------------------------
-    # Calculate chunks per document
-    # ----------------------------------------------
-    #
-    # Current Member 3 ingestion creates one
-    # combined FAISS index for all PDFs.
-    #
-    # Therefore exact per-document chunk counts
-    # are not directly stored in the index.
-    #
-    # We return the total index count separately
-    # and use "Indexed" status for each document.
-    # ----------------------------------------------
 
     for pdf_file in pdf_files:
 
@@ -687,13 +836,7 @@ def delete_rag_document(
         )
 
     # ----------------------------------------------
-    # Prevent deleting the last PDF
-    # ----------------------------------------------
-    #
-    # Member 3's RAGPipeline expects a FAISS
-    # vectorstore to exist. Keeping at least one
-    # PDF avoids leaving the RAG system without
-    # a vector index.
+    # Prevent deleting last PDF
     # ----------------------------------------------
 
     pdf_files = list(
@@ -753,10 +896,10 @@ def delete_rag_document(
                 )
             )
 
-        # Reload RAG pipeline
         reload_rag_pipeline()
 
     except HTTPException:
+
         raise
 
     except Exception as error:
